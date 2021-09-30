@@ -63,7 +63,7 @@ AC_CONFIG_FILES([
 	Makefile
 	lib/Makefile
 	mountd/Makefile
-	adduser/Makefile
+	user/Makefile
 	addshare/Makefile
 	control/Makefile
 ])

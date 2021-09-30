@@ -29,7 +29,7 @@ Setup steps:
 		modprobe ksmbd
 	- create user/password for SMB share
 		mkdir /etc/ksmbd/
-		ksmbd.adduser -a <Enter USERNAME for SMB share access>
+		ksmbd.user -a <USERNAME for SMB share access>
 		Enter password for SMB share access
 	- create /etc/ksmbd/smb.conf file, add SMB share in smb.conf file
 		Refer smb.conf.example
@@ -75,8 +75,8 @@ steps:
 ADMIN TOOLS
 --------------------
 
-- ksmbd.adduser
-	Adds, updates or removes (-a/-u/-d) a user from ksmbd pwd file.
+- ksmbd.user
+	Adds, updates or removes (-a, -u, -d) a user from ksmbd pwd file.
 
 - ksmbd.addshare
 	Adds, updates or removes (-a/-u/-d) a net share from smb.conf file.
