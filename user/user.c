@@ -25,8 +25,16 @@
 #include "linux/ksmbd_server.h"
 #include "version.h"
 
-static char *arg_account = NULL;
-static char *arg_password = NULL;
+static struct option opts[] = {
+	{ "add-user",		required_argument,	NULL,	'a' },
+	{ "del-user",		required_argument,	NULL,	'd' },
+	{ "update-user",	required_argument,	NULL,	'u' },
+	{ "password",		required_argument,	NULL,	'p' },
+	{ "import-users",	required_argument,	NULL,	'i' },
+	{ "version",		no_argument,		NULL,	'V' },
+	{ "help",		no_argument,		NULL,	'V' },
+	{ NULL,			0,			NULL,	0 }
+};
 
 enum {
 	COMMAND_ADD_USER = 1,
@@ -36,23 +44,21 @@ enum {
 
 static void usage(void)
 {
-	fprintf(stderr, "Usage: smbuseradd\n");
-
-	fprintf(stderr, "\t-a | --add-user=login\n");
-	fprintf(stderr, "\t-d | --del-user=login\n");
-	fprintf(stderr, "\t-u | --update-user=login\n");
-	fprintf(stderr, "\t-p | --password=pass\n");
-
-	fprintf(stderr, "\t-i smbpwd.db | --import-users=smbpwd.db\n");
-	fprintf(stderr, "\t-V | --version\n");
-	fprintf(stderr, "\t-v | --verbose\n");
+	fprintf(stderr, "Usage: ksmbd.user [OPTION] arg\n\n");
+	fprintf(stderr, "%-30s%s", "  -a, --add-user=LOGIN", "Add user\n");
+	fprintf(stderr, "%-30s%s", "  -d, --del-user=LOGIN", "Delete user\n");
+	fprintf(stderr, "%-30s%s", "  -u, --update-user=LOGIN", "Update user information\n");
+	fprintf(stderr, "%-30s%s", "  -p, --password=PASSWORD", "Set password for user\n");
+	fprintf(stderr, "%-30s%s", "  -i, --import-users=DB_PATH", "Use db file from DB_PATH\n");
+	fprintf(stderr, "%-30s%s", "  -V --version", "Show ksmbd version\n");
+	fprintf(stderr, "%-30s%s", "  -h --help", "Show this help menu\n");
 
 	exit(EXIT_FAILURE);
 }
 
 static void show_version(void)
 {
-	printf("ksmbd-tools version : %s\n", KSMBD_TOOLS_VERSION);
+	printf("ksmbd-tools version: %s\n", KSMBD_TOOLS_VERSION);
 	exit(EXIT_FAILURE);
 }
 
@@ -98,27 +104,32 @@ int main(int argc, char *argv[])
 {
 	int ret = EXIT_FAILURE;
 	char *pwddb = PATH_PWDDB;
+	char *login = NULL;
+	char *pw = NULL;
 	int c, cmd = 0;
 
-	set_logger_app_name("smbuseradd");
+	if (argc < 2)
+		usage();
+
+	set_logger_app_name("ksmbd-user");
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "c:i:a:d:u:p:Vvh")) != EOF)
+	while((c = getopt_long(argc, argv, ":a:d:u:p:i:Vh", opts, NULL)) != EOF) {
 		switch (c) {
 		case 'a':
-			arg_account = g_strdup(optarg);
+			login = g_strdup(optarg);
 			cmd = COMMAND_ADD_USER;
 			break;
 		case 'd':
-			arg_account = g_strdup(optarg);
+			login = g_strdup(optarg);
 			cmd = COMMAND_DEL_USER;
 			break;
 		case 'u':
-			arg_account = g_strdup(optarg);
+			login = g_strdup(optarg);
 			cmd = COMMAND_UPDATE_USER;
 			break;
 		case 'p':
-			arg_password = g_strdup(optarg);
+			pw = g_strdup(optarg);
 			break;
 		case 'i':
 			pwddb = g_strdup(optarg);
@@ -126,15 +137,19 @@ int main(int argc, char *argv[])
 		case 'V':
 			show_version();
 			break;
-		case 'v':
-			break;
+		case ':':
+			fprintf(stderr, "Option '%s' needs an argument.\n", argv[optind-1]);
+			exit(EXIT_FAILURE);
 		case '?':
+			fprintf(stderr, "Invalid option '%s'\n", argv[optind-1]);
+			/* Fall through */
 		case 'h':
 		default:
 			usage();
+		}
 	}
 
-	if (sanity_check_user_name_simple(arg_account)) {
+	if (sanity_check_user_name_simple(login)) {
 		pr_err("User name sanity check failure\n");
 		goto out;
 	}
@@ -163,14 +178,14 @@ int main(int argc, char *argv[])
 	}
 
 	if (cmd == COMMAND_ADD_USER)
-		ret = command_add_user(pwddb, arg_account, arg_password);
+		ret = command_add_user(pwddb, login, pw);
 	if (cmd == COMMAND_DEL_USER)
-		ret = command_del_user(pwddb, arg_account);
+		ret = command_del_user(pwddb, login);
 	if (cmd == COMMAND_UPDATE_USER)
-		ret = command_update_user(pwddb, arg_account, arg_password);
+		ret = command_update_user(pwddb, login, pw);
 
 	/*
-	 * We support only ADD_USER command at this moment
+	 * FIXME: We support only ADD_USER command at this moment
 	 */
 	if (ret == 0 && cmd == COMMAND_ADD_USER)
 		notify_ksmbd_daemon();
