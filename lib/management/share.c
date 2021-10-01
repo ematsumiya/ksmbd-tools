@@ -276,7 +276,7 @@ static GHashTable *parse_list(GHashTable *map, char **list)
 		if (!p)
 			continue;
 
-		user = usm_lookup_user(p);
+		user = usm_get_user(p);
 		if (!user) {
 			pr_info("Drop non-existing user `%s'\n", p);
 			continue;
@@ -375,7 +375,7 @@ static void process_group_kv(gpointer _k, gpointer _v, gpointer user_data)
 			return;
 		}
 
-		user = usm_lookup_user(_v);
+		user = usm_get_user(_v);
 		if (user) {
 			set_user_flag(user, KSMBD_USER_FLAG_GUEST_ACCOUNT);
 			put_ksmbd_user(user);
@@ -657,7 +657,7 @@ int shm_lookup_users_map(struct ksmbd_share *share,
 
 	if (map >= KSMBD_SHARE_USERS_MAX) {
 		pr_err("Invalid users map index: %d\n", map);
-		return 0;
+		return ret;
 	}
 
 	if (!share->maps[map])
@@ -684,7 +684,7 @@ int shm_lookup_hosts_map(struct ksmbd_share *share,
 
 	if (map >= KSMBD_SHARE_HOSTS_MAX) {
 		pr_err("Invalid hosts map index: %d\n", map);
-		return 0;
+		return ret;
 	}
 
 	if (map == KSMBD_SHARE_HOSTS_ALLOW_MAP)

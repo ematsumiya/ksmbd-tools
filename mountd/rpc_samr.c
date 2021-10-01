@@ -268,7 +268,7 @@ static int samr_lookup_names_return(struct ksmbd_rpc_pipe *pipe)
 	if (!ch)
 		return KSMBD_RPC_EBAD_FID;
 
-	ch->user = usm_lookup_user(STR_VAL(dce->sm_req.name));
+	ch->user = usm_get_user(STR_VAL(dce->sm_req.name));
 	if (!ch->user)
 		return KSMBD_RPC_EACCESS_DENIED;
 

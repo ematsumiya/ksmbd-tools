@@ -41,7 +41,7 @@ static inline int test_user_flag(struct ksmbd_user *user, int bit)
 struct ksmbd_user *get_ksmbd_user(struct ksmbd_user *user);
 void put_ksmbd_user(struct ksmbd_user *user);
 
-struct ksmbd_user *usm_lookup_user(char *name);
+struct ksmbd_user *usm_get_user(char *name);
 
 int usm_update_user_password(struct ksmbd_user *user, char *pass);
 

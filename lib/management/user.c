@@ -46,31 +46,27 @@ static int __usm_remove_user(struct ksmbd_user *user)
 
 struct ksmbd_user *get_ksmbd_user(struct ksmbd_user *user)
 {
+	struct ksmbd_user *ret = NULL;
 	g_rw_lock_writer_lock(&user->update_lock);
 	if (user->ref_count != 0) {
 		user->ref_count++;
-		g_rw_lock_writer_unlock(&user->update_lock);
-	} else {
-		g_rw_lock_writer_unlock(&user->update_lock);
-		user = NULL;
+		ret = user;
 	}
-	return user;
+	g_rw_lock_writer_unlock(&user->update_lock);
+
+	return ret;
 }
 
 void put_ksmbd_user(struct ksmbd_user *user)
 {
-	int drop;
-
 	if (!user)
 		return;
 
 	g_rw_lock_writer_lock(&user->update_lock);
 	user->ref_count--;
-	drop = !user->ref_count;
-	g_rw_lock_writer_unlock(&user->update_lock);
-
-	if (!drop)
+	if (user->ref_count)
 		return;
+	g_rw_lock_writer_unlock(&user->update_lock);
 
 	__usm_remove_user(user);
 }
@@ -146,27 +142,25 @@ int usm_init(void)
 	return 0;
 }
 
-static struct ksmbd_user *__usm_lookup_user(char *name)
+static struct ksmbd_user *usm_lookup_user(char *name)
 {
 	return g_hash_table_lookup(users_table, name);
 }
 
-struct ksmbd_user *usm_lookup_user(char *name)
+struct ksmbd_user *usm_get_user(char *name)
 {
-	struct ksmbd_user *user, *ret;
+	struct ksmbd_user *user, *ret = NULL;
 
 	if (!name)
 		return NULL;
 
 	g_rw_lock_reader_lock(&users_table_lock);
-	user = __usm_lookup_user(name);
-	if (user) {
+	user = usm_lookup_user(name);
+	if (user)
 		ret = get_ksmbd_user(user);
-		if (!ret)
-			user = NULL;
-	}
 	g_rw_lock_reader_unlock(&users_table_lock);
-	return user;
+
+	return ret;
 }
 
 int usm_add_new_user(char *name, char *pwd)
@@ -181,7 +175,7 @@ int usm_add_new_user(char *name, char *pwd)
 	}
 
 	g_rw_lock_writer_lock(&users_table_lock);
-	if (__usm_lookup_user(name)) {
+	if (usm_lookup_user(name)) {
 		g_rw_lock_writer_unlock(&users_table_lock);
 		pr_info("User already exists %s\n", name);
 		kill_ksmbd_user(user);
@@ -209,7 +203,7 @@ int usm_add_update_user_from_pwdentry(char *data)
 		return -EINVAL;
 	}
 
-	*pos = 0x00;
+	*pos = 0;
 	name = g_strdup(data);
 	pwd = g_strdup(pos + 1);
 
@@ -219,7 +213,7 @@ int usm_add_update_user_from_pwdentry(char *data)
 		return -ENOMEM;
 	}
 
-	user = usm_lookup_user(name);
+	user = usm_get_user(name);
 	if (user) {
 		ret = usm_update_user_password(user, pwd);
 		put_ksmbd_user(user);
@@ -245,7 +239,7 @@ int usm_add_subauth_global_conf(char *data)
 		return -EINVAL;
 	}
 
-	*spos = 0x00;
+	*spos = 0;
 	global_conf.gen_subauth[0] = atoi(pos);
 	pos = spos + 1;
 
@@ -254,7 +248,7 @@ int usm_add_subauth_global_conf(char *data)
 		pr_err("Invalid subauth entry %s\n", data);
 		return -EINVAL;
 	}
-	*spos = 0x00;
+	*spos = 0;
 	global_conf.gen_subauth[1] = atoi(pos);
 	global_conf.gen_subauth[2] = atoi(spos + 1);
 
@@ -316,14 +310,14 @@ static int usm_copy_user_account(struct ksmbd_user *user,
 				 char *account,
 				 size_t sz)
 {
-	int account_sz;
+	int len;
 
 	if (test_user_flag(user, KSMBD_USER_FLAG_GUEST_ACCOUNT))
 		return 0;
 
-	account_sz = strlen(user->name);
-	if (sz >= account_sz) {
-		memcpy(account, user->name, account_sz);
+	len = strlen(user->name);
+	if (sz >= len) {
+		memcpy(account, user->name, len);
 		return 0;
 	}
 	pr_err("Cannot copy user data, buffer overrun\n");
@@ -364,7 +358,7 @@ int usm_handle_login_request(struct ksmbd_login_request *req,
 		null_session = 1;
 
 	if (!null_session)
-		user = usm_lookup_user(req->account);
+		user = usm_get_user(req->account);
 	if (user) {
 		__handle_login_request(resp, user);
 		put_ksmbd_user(user);
@@ -378,7 +372,7 @@ int usm_handle_login_request(struct ksmbd_login_request *req,
 
 	if (null_session ||
 		global_conf.map_to_guest == KSMBD_CONF_MAP_TO_GUEST_BAD_USER)
-		user = usm_lookup_user(global_conf.guest_account);
+		user = usm_get_user(global_conf.guest_account);
 
 	if (!user)
 		return 0;

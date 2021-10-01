@@ -232,7 +232,7 @@ static int lsarpc_lookup_sid2_invoke(struct ksmbd_rpc_pipe *pipe)
 		rid = ni->sid.sub_auth[ni->sid.num_subauth];
 		passwd = getpwuid(rid);
 		if (passwd)
-			ni->user = usm_lookup_user(passwd->pw_name);
+			ni->user = usm_get_user(passwd->pw_name);
 
 		ni->index = i + 1;
 		if (set_domain_name(&ni->sid, ni->domain_str, &ni->type))
@@ -356,7 +356,7 @@ static int lsarpc_lookup_names3_invoke(struct ksmbd_rpc_pipe *pipe)
 			name = strtok(NULL, "\\");
 		}
 
-		ni->user = usm_lookup_user(name);
+		ni->user = usm_get_user(name);
 		if (!ni->user)
 			break;
 		pipe->entries = g_array_append_val(pipe->entries, ni);
