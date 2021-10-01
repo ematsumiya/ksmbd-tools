@@ -24,8 +24,16 @@
 #include "share_admin.h"
 #include "version.h"
 
-static char *arg_name;
-static char *arg_opts;
+static struct option opts[] = {
+	{ "add-share",		required_argument,	NULL,	'a' },
+	{ "del-share",		required_argument,	NULL,	'd' },
+	{ "update-share",	required_argument,	NULL,	'u' },
+	{ "options",		required_argument,	NULL,	'o' },
+	{ "conf",		required_argument,	NULL,	'c' },
+	{ "version",		no_argument,		NULL,	'V' },
+	{ "help",		no_argument,		NULL,	'h' },
+	{ NULL,			0,			NULL,	0 }
+};
 
 enum {
 	COMMAND_ADD_SHARE = 1,
@@ -37,20 +45,18 @@ static void usage(void)
 {
 	int i;
 
-	fprintf(stderr, "Usage: smbshareadd\n");
-
-	fprintf(stderr, "\t-a | --add-share=share\n");
-	fprintf(stderr, "\t-d | --del-share=share\n");
-	fprintf(stderr, "\t-u | --update-share=share\n");
-	fprintf(stderr, "\t-o | --options=\"op1=val1 op2=val2...\"\n");
-
-	fprintf(stderr, "\t-c smb.conf\n");
-	fprintf(stderr, "\t-V | --version\n");
-	fprintf(stderr, "\t-v | --verbose\n");
-
+	fprintf(stderr, "Usage: ksmbd.share [OPTION] arg\n");
+	fprintf(stderr, "%-30s%s", "  -a, --add-share=SHARE", "Add a share\n");
+	fprintf(stderr, "%-30s%s", "  -d, --del-share=SHARE", "Delete a share\n");
+	fprintf(stderr, "%-30s%s", "  -u, --update-share=SHARE", "Update a share\n");
+	fprintf(stderr, "%-30s%s", "  -o, --options=\"[OP1=VAL1 OP2=VAL2 ...]\"", "Share options (see below)\n");
+	fprintf(stderr, "%-30s%s", "  -c, --conf FILE", "Use config from FILE\n");
+	fprintf(stderr, "%-30s%s", "  -V, --version", "Show ksmbd version\n");
+	fprintf(stderr, "%-30s%s", "  -h --help", "Show this help menu\n\n");
 	fprintf(stderr, "Supported share options:\n");
 	for (i = 0; i < KSMBD_SHARE_CONF_MAX; i++)
-		fprintf(stderr, "\t%s\n", KSMBD_SHARE_CONF[i]);
+		fprintf(stderr, "%s\n", KSMBD_SHARE_CONF[i]);
+
 	exit(EXIT_FAILURE);
 }
 
@@ -101,49 +107,55 @@ int main(int argc, char *argv[])
 {
 	int ret = EXIT_FAILURE;
 	char *smbconf = PATH_SMBCONF;
+	char *share_name = NULL;
+	char *options = NULL;
 	int c, cmd = 0;
 
-	set_logger_app_name("smbshareadd");
+	if (argc < 2)
+		usage();
+
+	set_logger_app_name("ksmbd-share");
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "c:a:d:u:p:o:Vvh")) != EOF)
+	while ((c = getopt_long(argc, argv, ":c:a:d:u:o:Vh", opts, NULL)) != EOF)
 		switch (c) {
 		case 'a':
-			arg_name = g_ascii_strdown(optarg, strlen(optarg));
+			share_name = g_ascii_strdown(optarg, strlen(optarg));
 			cmd = COMMAND_ADD_SHARE;
 			break;
 		case 'd':
-			arg_name = g_ascii_strdown(optarg, strlen(optarg));
+			share_name = g_ascii_strdown(optarg, strlen(optarg));
 			cmd = COMMAND_DEL_SHARE;
 			break;
 		case 'u':
-			arg_name = g_ascii_strdown(optarg, strlen(optarg));
+			share_name = g_ascii_strdown(optarg, strlen(optarg));
 			cmd = COMMAND_UPDATE_SHARE;
 			break;
 		case 'c':
 			smbconf = strdup(optarg);
 			break;
 		case 'o':
-			arg_opts = strdup(optarg);
+			options = strdup(optarg);
 			break;
 		case 'V':
 			show_version();
 			break;
-		case 'v':
-			break;
+		case ':':
+			fprintf(stderr, "Option '%s' needs an argument.\n", argv[optind-1]);
+			exit(EXIT_FAILURE);
 		case '?':
+			fprintf(stderr, "Invalid option '%s'\n", argv[optind-1]);
+			/* Fall through */
 		case 'h':
 		default:
 			usage();
 	}
 
-	if (cmd != COMMAND_DEL_SHARE && !arg_opts) {
+	if (cmd != COMMAND_DEL_SHARE && !options)
 		usage();
-		return -1;
-	}
 
-	if (sanity_check_share_name_simple(arg_name)) {
-		pr_err("share name sanity check failure\n");
+	if (sanity_check_share_name_simple(share_name)) {
+		pr_err("Share name sanity check failure\n");
 		goto out;
 	}
 
@@ -159,14 +171,14 @@ int main(int argc, char *argv[])
 	}
 
 	if (cmd == COMMAND_ADD_SHARE)
-		ret = command_add_share(smbconf, arg_name, arg_opts);
+		ret = command_add_share(smbconf, share_name, options);
 	if (cmd == COMMAND_DEL_SHARE)
-		ret = command_del_share(smbconf, arg_name);
+		ret = command_del_share(smbconf, share_name);
 	if (cmd == COMMAND_UPDATE_SHARE)
-		ret = command_update_share(smbconf, arg_name, arg_opts);
+		ret = command_update_share(smbconf, share_name, options);
 
 	/*
-	 * We support only ADD_SHARE command for the time being
+	 * FIXME: We support only ADD_SHARE command for the time being
 	 */
 	if (ret == 0 && cmd == COMMAND_ADD_SHARE)
 		notify_ksmbd_daemon();
