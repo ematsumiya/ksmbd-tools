@@ -1,0 +1,17 @@
+[Unit]
+Description=ksmbd userspace daemon
+Wants=network-online.target
+After=network.target network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+RemainAfterExit=yes
+ExecStartPre=-/sbin/modprobe ksmbd
+ExecStart=/sbin/ksmbdctl daemon start
+ExecReload=/bin/sh -c '/sbin/ksmbdctl daemon shutdown && /sbin/ksmbdctl daemon start'
+ExecStop=/sbin/ksmbdctl daemon shutdown
+
+[Install]
+WantedBy=multi-user.target

@@ -13,10 +13,11 @@
 #include <fcntl.h>
 
 #include <stdio.h>
-#include <ksmbdtools.h>
+#include "ksmbdtools.h"
 
 static const char *app_name = "unknown";
 static int log_open;
+int log_level = PR_ERROR;
 
 typedef void (*logger)(int level, const char *fmt, va_list list);
 
@@ -33,6 +34,8 @@ static int syslog_level(int level)
 {
 	if (level == PR_ERROR)
 		return LOG_ERR;
+	if (level == PR_WARN)
+		return LOG_WARNING;
 	if (level == PR_INFO)
 		return LOG_INFO;
 	if (level == PR_DEBUG)
@@ -221,28 +224,40 @@ retry:
 
 static void send_signal_to_ksmbd_daemon(int signo)
 {
-	char manager_pid[10] = {0, };
-	int pid = 0;
-	int lock_fd;
+	pid_t pid;
 
-	lock_fd = open(KSMBD_LOCK_FILE, O_RDONLY);
-	if (lock_fd < 0)
+	pid = get_running_pid();
+	if (pid < 0)
 		return;
-
-	if (read(lock_fd, &manager_pid, sizeof(manager_pid)) == -1) {
-		pr_debug("Unable to read main PID: %s\n", strerr(errno));
-		close(lock_fd);
-		return;
-	}
-
-	close(lock_fd);
-
-	pid = strtol(manager_pid, NULL, 10);
 
 	pr_debug("Send %d to pid %d\n", signo, pid);
 	if (kill(pid, signo))
-		pr_debug("Unable to send signal to pid %d: %s\n",
-			 pid, strerr(errno));
+		pr_warn("Unable to send signal to pid %d: %s\n",
+			pid, strerr(errno));
+}
+
+int get_running_pid(void)
+{
+	char daemon_pid[10] = { 0 };
+	pid_t pid = 0;
+	int fd;
+
+	fd = open(KSMBD_LOCK_FILE, O_RDONLY);
+	if (fd < 0) {
+		pr_info("Can't open lock file %s: %s\n", KSMBD_LOCK_FILE, strerr(errno));
+		return -ENOENT;
+	}
+
+	if (read(fd, &daemon_pid, sizeof(daemon_pid)) == -1) {
+		pr_warn("Unable to read lock file: %s\n", strerr(errno));
+		close(fd);
+		return -EINVAL;
+	}
+
+	close(fd);
+	pid = strtol(daemon_pid, NULL, 10);
+
+	return pid;
 }
 
 void notify_ksmbd_daemon(void)
@@ -255,15 +270,15 @@ void terminate_ksmbd_daemon(void)
 	send_signal_to_ksmbd_daemon(SIGTERM);
 }
 
-int test_file_access(char *conf)
+int test_file_access(char *path)
 {
-	int fd = open(conf, O_RDWR | O_CREAT, S_IRWXU | S_IRGRP);
+	int fd = open(path, O_RDWR | O_CREAT, S_IRWXU | S_IRGRP);
 
 	if (fd != -1) {
 		close(fd);
 		return 0;
 	}
 
-	pr_err("%s %s\n", conf, strerr(errno));
+	pr_err("%s %s\n", path, strerr(errno));
 	return -EINVAL;
 }

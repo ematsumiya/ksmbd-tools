@@ -10,7 +10,6 @@
 
 #include <glib.h>
 
-
 enum share_users {
 	/* Admin users */
 	KSMBD_SHARE_ADMIN_USERS_MAP = 0,

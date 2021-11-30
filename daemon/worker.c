@@ -7,17 +7,17 @@
 #include <memory.h>
 #include <glib.h>
 #include <errno.h>
-#include <linux/ksmbd_server.h>
+#include "linux/ksmbd_server.h"
 
-#include <ksmbdtools.h>
-#include <worker.h>
-#include <ipc.h>
-#include <rpc.h>
+#include "ksmbdtools.h"
+#include "worker.h"
+#include "ipc.h"
+#include "rpc.h"
 
-#include <management/user.h>
-#include <management/share.h>
-#include <management/tree_conn.h>
-#include <management/spnego.h>
+#include "management/user.h"
+#include "management/share.h"
+#include "management/tree_conn.h"
+#include "management/spnego.h"
 
 #define MAX_WORKER_THREADS	4
 static GThreadPool *pool;
@@ -328,16 +328,17 @@ int wp_init(void)
 				 MAX_WORKER_THREADS,
 				 0,
 				 &err);
-	if (!pool) {
-		if (err) {
-			pr_err("Can't create pool: %s\n", err->message);
-			g_error_free(err);
-		}
+	if (!pool)
 		goto out_error;
-	}
 
 	return 0;
+
 out_error:
+	if (err) {
+		pr_err("Can't create pool: %s\n", err->message);
+		g_error_free(err);
+	}
+
 	wp_destroy();
 	return -ENOMEM;
 }

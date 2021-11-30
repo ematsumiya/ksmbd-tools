@@ -28,14 +28,14 @@ AC_ARG_ENABLE(krb5,
 	      enable_krb5=$enableval,
 	      enable_krb5="no")
 
-# Checks for header files.
+# Checks for krb5 header files.
 if test "$enable_krb5" != "no"; then
 	AC_CHECK_HEADERS([krb5.h])
 	if test x$ac_cv_header_krb5_h != xyes; then
 		if test "$enable_krb5" = "yes"; then
-			AC_MSG_ERROR([krb5.h not found, please install krb5-libs-devel.])
+			AC_MSG_ERROR([krb5.h not found. Please install "krb5-devel" package.])
 		else
-			AC_MSG_WARN([krb5.h not found, disabling krb5.])
+			AC_MSG_WARN([krb5.h not found, disabling krb5])
 			enable_krb5="no"
 		fi
 	fi
@@ -62,10 +62,6 @@ AM_CONDITIONAL(HAVE_LIBKRB5, [test "$enable_krb5" != "no"])
 AC_CONFIG_FILES([
 	Makefile
 	lib/Makefile
-	mountd/Makefile
-	adduser/Makefile
-	addshare/Makefile
-	control/Makefile
 ])
 
 AC_OUTPUT

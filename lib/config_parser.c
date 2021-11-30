@@ -12,12 +12,12 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <linux/ksmbd_server.h>
+#include "linux/ksmbd_server.h"
 
-#include <config_parser.h>
-#include <ksmbdtools.h>
-#include <management/user.h>
-#include <management/share.h>
+#include "config_parser.h"
+#include "ksmbdtools.h"
+#include "management/user.h"
+#include "management/share.h"
 
 struct smbconf_global global_conf;
 struct smbconf_parser parser;
@@ -376,7 +376,7 @@ static int cp_add_global_guest_account(gpointer _v)
 		return -ENOMEM;
 	}
 
-	user = usm_lookup_user(_v);
+	user = usm_get_user(_v);
 	if (!user) {
 		pr_err("Fatal error: unable to find `%s' account.\n",
 			(const char *) _v);
@@ -674,9 +674,9 @@ int cp_parse_smbconf(const char *smbconf)
 				    GROUPS_CALLBACK_STARTUP_INIT);
 }
 
-int cp_parse_pwddb(const char *pwddb)
+int cp_parse_db(const char *db)
 {
-	return __mmap_parse_file(pwddb, usm_add_update_user_from_pwdentry);
+	return __mmap_parse_file(db, usm_add_update_user_from_pwdentry);
 }
 
 int cp_smbconfig_hash_create(const char *smbconf)

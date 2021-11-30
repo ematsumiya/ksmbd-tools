@@ -56,7 +56,7 @@ struct smbconf_global {
 	unsigned int		gen_subauth[3];
 	char			*krb5_keytab_file;
 	char			*krb5_service_name;
-	char			*pwddb;
+	char			*users_db;
 	char			*smbconf;
 };
 
@@ -84,7 +84,8 @@ extern struct smbconf_global global_conf;
 
 #define KSMBD_CONF_FILE_MAX		10000
 
-#define PATH_PWDDB	"/etc/ksmbd/ksmbdpwd.db"
+#define PATH_USERS_DB	"/etc/ksmbd/users.db"
+#define PATH_OLD_USERS_DB	"/etc/ksmbd/ksmbdpwd.db"
 #define PATH_SMBCONF	"/etc/ksmbd/smb.conf"
 
 #define KSMBD_HEALTH_START		(0)
@@ -100,14 +101,16 @@ extern int ksmbd_health_status;
 //---------------------------------------------------------------//
 #define LOGAPP		"[%s/%d]:"
 #define PRERR		LOGAPP" ERROR: "
+#define PRWARN		LOGAPP" WARN: "
 #define PRINF		LOGAPP" INFO: "
 #define PRDEBUG		LOGAPP" DEBUG: "
 
 #define PR_ERROR	0
-#define PR_INFO		1
-#define PR_DEBUG	2
+#define PR_WARN		1
+#define PR_INFO		2
+#define PR_DEBUG	3
 
-static int log_level = PR_INFO;
+extern int log_level;
 
 #define PR_LOGGER_STDIO         0
 #define PR_LOGGER_SYSLOG        1
@@ -133,12 +136,16 @@ extern void pr_logger_init(int flags);
 					##__VA_ARGS__);			\
 	} while (0)
 
-#define pr_debug(f, ...)	\
+#define pr_debug(f, ...) \
 	pr_log(PR_DEBUG, PRDEBUG f, ##__VA_ARGS__)
-#define pr_info(f, ...)	\
+#define pr_info(f, ...) \
 	pr_log(PR_INFO, PRINF f, ##__VA_ARGS__)
-#define pr_err(f, ...)	\
+#define pr_warn(f, ...) \
+	pr_log(PR_WARN, PRWARN f, ##__VA_ARGS__)
+#define pr_err(f, ...) \
 	pr_log(PR_ERROR, PRERR f, ##__VA_ARGS__)
+#define pr_out(f, ...) \
+	fprintf(stderr, f, ##__VA_ARGS__)
 
 //---------------------------------------------------------------//
 
@@ -167,8 +174,13 @@ enum charset_idx {
 
 extern char *ksmbd_conv_charsets[KSMBD_CHARSET_MAX + 1];
 
+#define KSMBD_SYSFS_KILL_SERVER "/sys/class/ksmbd-control/kill_server"
+#define KSMBD_SYSFS_DEBUG	"/sys/class/ksmbd-control/debug"
+#define KSMBD_SYSFS_VERSION	"/sys/module/ksmbd/version"
+
+int get_running_pid(void);
 void notify_ksmbd_daemon(void);
 void terminate_ksmbd_daemon(void);
-int test_file_access(char *conf);
+int test_file_access(char *path);
 
 #endif /* __KSMBDTOOLS_H__ */
