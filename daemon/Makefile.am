@@ -5,5 +5,5 @@ ksmbd_mountd_LDADD = $(top_builddir)/lib/libksmbdtools.a
 
 sbin_PROGRAMS = ksmbd.mountd
 
-ksmbd_mountd_SOURCES = worker.c ipc.c rpc.c rpc_srvsvc.c rpc_wkssvc.c \
-                       mountd.c smbacl.c rpc_samr.c rpc_lsarpc.c
+ksmbd_mountd_SOURCES = worker.c ipc.c rpc.c rpc_srvsvc.c rpc_wkssvc.c daemon.c \
+		       smbacl.c rpc_samr.c rpc_lsarpc.c
