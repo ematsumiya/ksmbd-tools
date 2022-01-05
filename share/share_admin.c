@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2019 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2021 SUSE LLC
  *
  *   linux-cifsd-devel@lists.sourceforge.net
  */
 
 #include <glib.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -48,24 +50,26 @@ static char *aux_group_name(char *name)
 	return gn;
 }
 
-static int __open_smbconf(char *smbconf)
+static int open_smbconf(char *smbconf, bool truncate)
 {
-	conf_fd = open(smbconf, O_WRONLY);
+	conf_fd = open(smbconf, O_RDWR);
 	if (conf_fd == -1) {
 		pr_err("%s %s\n", strerr(errno), smbconf);
 		return -EINVAL;
 	}
 
-	if (ftruncate(conf_fd, 0)) {
-		pr_err("%s %s\n", strerr(errno), smbconf);
-		close(conf_fd);
-		return -EINVAL;
+	if (truncate) {
+		if (ftruncate(conf_fd, 0)) {
+			pr_err("%s %s\n", strerr(errno), smbconf);
+			close(conf_fd);
+			return -EINVAL;
+		}
 	}
 
 	return 0;
 }
 
-static void __write(void)
+static void do_write(void)
 {
 	int nr = 0;
 	int ret;
@@ -83,7 +87,7 @@ static void __write(void)
 	}
 }
 
-static void __write_share(gpointer key, gpointer value, gpointer buf)
+static void write_share(gpointer key, gpointer value, gpointer buf)
 {
 	char *k = (char *)key;
 	char *v = (char *)value;
@@ -95,14 +99,14 @@ static void __write_share(gpointer key, gpointer value, gpointer buf)
 			sizeof(wbuf));
 		exit(EXIT_FAILURE);
 	}
-	__write();
+	do_write();
 }
 
-static void write_share(struct smbconf_group *g)
+static void write_share_all(struct smbconf_group *g)
 {
 	wsz = snprintf(wbuf, sizeof(wbuf), "[%s]\n", g->name);
-	__write();
-	g_hash_table_foreach(g->kv, __write_share, NULL);
+	do_write();
+	g_hash_table_foreach(g->kv, write_share, NULL);
 }
 
 static void write_share_cb(gpointer key, gpointer value, gpointer share_data)
@@ -113,7 +117,7 @@ static void write_share_cb(gpointer key, gpointer value, gpointer share_data)
 	 * Do not write AUX group
 	 */
 	if (!strstr(g->name, AUX_GROUP_PREFIX))
-		write_share(g);
+		write_share_all(g);
 }
 
 static void write_remove_share_cb(gpointer key,
@@ -127,7 +131,7 @@ static void write_remove_share_cb(gpointer key,
 		return;
 	}
 
-	write_share(g);
+	write_share_all(g);
 }
 
 static void update_share_cb(gpointer key,
@@ -145,12 +149,32 @@ static void update_share_cb(gpointer key,
 	g_hash_table_insert(g, nk, nv);
 }
 
-int command_add_share(char *smbconf, char *name, char *opts)
+static void list_shares_cb(gpointer key, gpointer value, gpointer data)
+{
+	char *nk, *nv;
+
+	nk = g_strdup(key);
+	nv = g_strdup(value);
+
+	if (!nk || !nv)
+		exit(EXIT_FAILURE);
+
+	if (!strcmp(nk, "global"))
+		goto out;
+
+	pr_out("%s\n", nk);
+
+out:
+	g_free(nk);
+	g_free(nv);
+}
+
+int share_add_cmd(char *smbconf, char *name, char *opts)
 {
 	char *new_name = NULL;
 
 	if (g_hash_table_lookup(parser.groups, name)) {
-		pr_err("Share already exists: %s\n", name);
+		pr_warn("Share already exists: %s\n", name);
 		return -EEXIST;
 	}
 
@@ -158,7 +182,7 @@ int command_add_share(char *smbconf, char *name, char *opts)
 	if (cp_parse_external_smbconf_group(new_name, opts))
 		goto error;
 
-	if (__open_smbconf(smbconf))
+	if (open_smbconf(smbconf, true))
 		goto error;
 	g_hash_table_foreach(parser.groups, write_share_cb, NULL);
 	close(conf_fd);
@@ -170,7 +194,7 @@ error:
 	return -EINVAL;
 }
 
-int command_update_share(char *smbconf, char *name, char *opts)
+int share_update_cmd(char *smbconf, char *name, char *opts)
 {
 	struct smbconf_group *existing_group;
 	struct smbconf_group *update_group;
@@ -198,7 +222,7 @@ int command_update_share(char *smbconf, char *name, char *opts)
 			     update_share_cb,
 			     existing_group->kv);
 
-	if (__open_smbconf(smbconf))
+	if (open_smbconf(smbconf, true))
 		goto error;
 
 	g_hash_table_foreach(parser.groups, write_share_cb, NULL);
@@ -211,14 +235,33 @@ error:
 	return -EINVAL;
 }
 
-int command_del_share(char *smbconf, char *name)
+int share_delete_cmd(char *smbconf, char *name)
 {
-	if (__open_smbconf(smbconf))
+	if (open_smbconf(smbconf, true))
 		return -EINVAL;
 
 	g_hash_table_foreach(parser.groups,
 			     write_remove_share_cb,
 			     name);
+	close(conf_fd);
+	return 0;
+}
+
+int share_list_cmd(char *smbconf)
+{
+	if (open_smbconf(smbconf, false))
+		return -EINVAL;
+
+	if (g_hash_table_size(parser.groups) <= 1) {
+		pr_out("No shares available in %s.\n", smbconf);
+		goto out;
+	}
+
+	pr_out("Shares available in %s:\n", smbconf);
+	g_hash_table_foreach(parser.groups,
+			     list_shares_cb,
+			     NULL);
+out:
 	close(conf_fd);
 	return 0;
 }
