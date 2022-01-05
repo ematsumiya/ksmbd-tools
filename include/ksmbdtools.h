@@ -168,6 +168,7 @@ enum charset_idx {
 
 extern char *ksmbd_conv_charsets[KSMBD_CHARSET_MAX + 1];
 
+int get_running_pid(void);
 void notify_ksmbd_daemon(void);
 void terminate_ksmbd_daemon(void);
 int test_file_access(char *conf);

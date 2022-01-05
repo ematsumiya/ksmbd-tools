@@ -2,7 +2,7 @@
 
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS = lib daemon user share control
+SUBDIRS = lib daemon user share
 
 # other stuff
 EXTRA_DIST =			\

@@ -255,6 +255,30 @@ void terminate_ksmbd_daemon(void)
 	send_signal_to_ksmbd_daemon(SIGTERM);
 }
 
+int get_running_pid(void)
+{
+	char daemon_pid[10] = { 0 };
+	pid_t pid = 0;
+	int fd;
+
+	fd = open(KSMBD_LOCK_FILE, O_RDONLY);
+	if (fd < 0) {
+		pr_info("Can't open lock file %s: %s\n", KSMBD_LOCK_FILE, strerr(errno));
+		return -ENOENT;
+	}
+
+	if (read(fd, &daemon_pid, sizeof(daemon_pid)) == -1) {
+		pr_err("Unable to read lock file: %s\n", strerr(errno));
+		close(fd);
+		return -EINVAL;
+	}
+
+	close(fd);
+	pid = strtol(daemon_pid, NULL, 10);
+
+	return pid;
+}
+
 int test_file_access(char *conf)
 {
 	int fd = open(conf, O_RDWR | O_CREAT, S_IRWXU | S_IRGRP);
