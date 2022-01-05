@@ -1,6 +1,6 @@
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS = lib daemon user share control
+SUBDIRS = lib daemon user share
 
 EXTRA_DIST = include \
              README.md \

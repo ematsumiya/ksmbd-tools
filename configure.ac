@@ -138,7 +138,6 @@ AC_CONFIG_FILES([
 	daemon/Makefile
 	user/Makefile
 	share/Makefile
-	control/Makefile
 ])
 
 AC_OUTPUT
