@@ -26,7 +26,7 @@ int cp_parse_external_smbconf_group(char *name, char *opts);
 int cp_smbconfig_hash_create(const char *smbconf);
 void cp_smbconfig_destroy(void);
 
-int cp_parse_pwddb(const char *pwddb);
+int cp_parse_db(const char *db);
 int cp_parse_smbconf(const char *smbconf);
 int cp_parse_reload_smbconf(const char *smbconf);
 int cp_parse_subauth(const char *subauth_path);

@@ -57,7 +57,7 @@ struct smbconf_global {
 	unsigned int		gen_subauth[3];
 	char			*krb5_keytab_file;
 	char			*krb5_service_name;
-	char			*pwddb;
+	char			*db;
 	char			*smbconf;
 };
 
@@ -85,8 +85,9 @@ extern struct smbconf_global global_conf;
 
 #define KSMBD_CONF_FILE_MAX		10000
 
-#define PATH_PWDDB	"/etc/ksmbd/ksmbdpwd.db"
-#define PATH_SMBCONF	"/etc/ksmbd/smb.conf"
+#define PATH_USERS_DB		"/etc/ksmbd/users.db"
+#define PATH_OLD_USERS_DB	"/etc/ksmbd/ksmbdpwd.db"
+#define PATH_SMBCONF		"/etc/ksmbd/smb.conf"
 
 #define KSMBD_HEALTH_START		(0)
 #define KSMBD_HEALTH_RUNNING		(1 << 0)

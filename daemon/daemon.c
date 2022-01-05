@@ -291,11 +291,11 @@ static int setup_signals(sighandler_t handler)
 	return 0;
 }
 
-static int parse_configs(char *pwddb, char *smbconf)
+static int parse_configs(char *db, char *smbconf)
 {
 	int ret;
 
-	ret = cp_parse_pwddb(pwddb);
+	ret = cp_parse_db(db);
 	if (ret == -ENOENT) {
 		pr_err("User database file does not exist. %s\n",
 			"Only guest sessions (if permitted) will work.");
@@ -395,7 +395,7 @@ static int worker_process_init(void)
 		goto out;
 	}
 
-	ret = parse_configs(global_conf.pwddb, global_conf.smbconf);
+	ret = parse_configs(global_conf.db, global_conf.smbconf);
 	if (ret) {
 		pr_err("Failed to parse configuration files\n");
 		goto out;
@@ -645,7 +645,7 @@ int main(int argc, char *argv[])
 
 	set_logger_app_name("ksmbd.daemon");
 	memset(&global_conf, 0x00, sizeof(struct smbconf_global));
-	global_conf.pwddb = PATH_PWDDB;
+	global_conf.db = PATH_USERS_DB;
 	global_conf.smbconf = PATH_SMBCONF;
 	pr_logger_init(PR_LOGGER_STDIO);
 
@@ -669,7 +669,7 @@ int main(int argc, char *argv[])
 			global_conf.smbconf = g_strdup(optarg);
 			break;
 		case 'u':
-			global_conf.pwddb = g_strdup(optarg);
+			global_conf.db = g_strdup(optarg);
 			break;
 		case 'n':
 			if (!optarg)
@@ -694,7 +694,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (!global_conf.smbconf || !global_conf.pwddb) {
+	if (!global_conf.smbconf || !global_conf.db) {
 		pr_err("Out of memory\n");
 		exit(EXIT_FAILURE);
 	}

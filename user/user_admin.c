@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2021 SUSE LLC
  *
  *   linux-cifsd-devel@lists.sourceforge.net
  */
@@ -8,8 +9,8 @@
 #include <glib.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <unistd.h>
-#include <getopt.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <termios.h>
@@ -24,23 +25,23 @@
 
 #define MAX_NT_PWD_LEN 129
 
-static char *arg_account = NULL;
-static char *arg_password = NULL;
 static int conf_fd = -1;
 static char wbuf[2 * MAX_NT_PWD_LEN + 2 * KSMBD_REQ_MAX_ACCOUNT_NAME_SZ];
 
-static int __opendb_file(char *pwddb)
+static int open_db(char *db, bool truncate)
 {
-	conf_fd = open(pwddb, O_WRONLY);
+	conf_fd = open(db, O_WRONLY);
 	if (conf_fd == -1) {
-		pr_err("%s %s\n", strerr(errno), pwddb);
+		pr_err("%s %s\n", strerr(errno), db);
 		return -EINVAL;
 	}
 
-	if (ftruncate(conf_fd, 0)) {
-		pr_err("%s %s\n", strerr(errno), pwddb);
-		close(conf_fd);
-		return -EINVAL;
+	if (truncate) {
+		if (ftruncate(conf_fd, 0)) {
+			pr_err("%s %s\n", strerr(errno), db);
+			close(conf_fd);
+			return -EINVAL;
+		}
 	}
 
 	return 0;
@@ -60,149 +61,147 @@ static void term_toggle_echo(int on_off)
 	tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
 }
 
-static char *__prompt_password_stdin(size_t *sz)
+static char *prompt_password_stdin(size_t *sz)
 {
-	char *pswd1 = calloc(1, MAX_NT_PWD_LEN + 1);
-	char *pswd2 = calloc(1, MAX_NT_PWD_LEN + 1);
+	char *pw1 = calloc(1, MAX_NT_PWD_LEN + 1);
+	char *pw2 = calloc(1, MAX_NT_PWD_LEN + 1);
 	size_t len = 0;
 	int i;
 
-	if (!pswd1 || !pswd2) {
-		free(pswd1);
-		free(pswd2);
-		pr_err("Out of memory\n");
-		return NULL;
-	}
+	if (!pw1 || !pw2)
+		goto fail;
 
 again:
-	printf("New password: ");
+	pr_out("New password: ");
 	term_toggle_echo(0);
-	if (fgets(pswd1, MAX_NT_PWD_LEN, stdin) == NULL) {
+	if (fgets(pw1, MAX_NT_PWD_LEN, stdin) == NULL) {
 		term_toggle_echo(1);
-		pr_err("\nFatal error: %s\n", strerr(errno));
-		free(pswd1);
-		free(pswd2);
-		return NULL;
+		pr_out("\n");
+		goto fail;
 	}
+	pr_out("\n");
 
-	printf("\nRetype new password: ");
-	if (fgets(pswd2, MAX_NT_PWD_LEN, stdin) == NULL) {
+	pr_out("Retype new password: ");
+	if (fgets(pw2, MAX_NT_PWD_LEN, stdin) == NULL) {
 		term_toggle_echo(1);
-		pr_err("\nFatal error: %s\n", strerr(errno));
-		free(pswd1);
-		free(pswd2);
-		return NULL;
+		pr_out("\n");
+		goto fail;
 	}
 	term_toggle_echo(1);
-	printf("\n");
+	pr_out("\n");
 
-	len = strlen(pswd1);
+	len = strlen(pw1);
 	for (i = 0; i < len; i++)
-		if (pswd1[i] == '\n')
-			pswd1[i] = 0x00;
+		if (pw1[i] == '\n')
+			pw1[i] = 0x00;
 
-	len = strlen(pswd2);
+	len = strlen(pw2);
 	for (i = 0; i < len; i++)
-		if (pswd2[i] == '\n')
-			pswd2[i] = 0x00;
+		if (pw2[i] == '\n')
+			pw2[i] = 0x00;
 
-	if (memcmp(pswd1, pswd2, MAX_NT_PWD_LEN + 1)) {
+	if (memcmp(pw1, pw2, MAX_NT_PWD_LEN + 1)) {
 		pr_err("Passwords don't match\n");
 		goto again;
 	}
 
-	len = strlen(pswd1);
+	len = strlen(pw1);
 	if (len <= 1) {
 		pr_err("No password was provided\n");
 		goto again;
 	}
 
 	*sz = len;
-	free(pswd2);
-	return pswd1;
+	free(pw2);
+	return pw1;
+fail:
+	pr_err("Fatal error: %s\n", strerr(errno));
+	free(pw1);
+	free(pw2);
+	return NULL;
 }
 
-static char *prompt_password(size_t *sz)
+static char *prompt_password(char *password, size_t *len)
 {
-	if (!arg_password)
-		return __prompt_password_stdin(sz);
+	if (!password)
+		return prompt_password_stdin(len);
 
-	*sz = strlen(arg_password);
-	return arg_password;
+	*len = strlen(password);
+	return password;
 }
 
-static char *get_utf8_password(long *len)
+static char *get_utf8_password(char *password, long *len)
 {
 	size_t raw_sz;
-	char *pswd_raw, *pswd_converted;
+	char *pw_raw, *pw_converted;
 	gsize bytes_read = 0;
 	gsize bytes_written = 0;
 
-	pswd_raw = prompt_password(&raw_sz);
-	if (!pswd_raw)
+	pw_raw = prompt_password(password, &raw_sz);
+	if (!pw_raw)
 		return NULL;
 
-	pswd_converted = ksmbd_gconvert(pswd_raw,
+	pw_converted = ksmbd_gconvert(pw_raw,
 					raw_sz,
 					KSMBD_CHARSET_UTF16LE,
 					KSMBD_CHARSET_DEFAULT,
 					&bytes_read,
 					&bytes_written);
-	if (!pswd_converted) {
-		free(pswd_raw);
+	if (!pw_converted) {
+		free(pw_raw);
 		return NULL;
 	}
 
 	*len = bytes_written;
-	free(pswd_raw);
-	return pswd_converted;
+	free(pw_raw);
+	return pw_converted;
 }
 
-static void __sanity_check(char *pswd_hash, char *pswd_b64)
+static void sanity_check_pw(char *pw_hash, char *pw_b64)
 {
-	size_t pass_sz;
-	char *pass = base64_decode(pswd_b64, &pass_sz);
+	size_t len;
+	char *pass = base64_decode(pw_b64, &len);
 
 	if (!pass) {
 		pr_err("Unable to decode NT hash\n");
 		exit(EXIT_FAILURE);
 	}
 
-	if (memcmp(pass, pswd_hash, pass_sz)) {
+	if (memcmp(pass, pw_hash, len)) {
 		pr_err("NT hash encoding error\n");
 		exit(EXIT_FAILURE);
 	}
 	free(pass);
 }
 
-static char *get_hashed_b64_password(void)
+static char *get_hashed_b64_password(char *password)
 {
 	struct md4_ctx mctx;
 	long len;
-	char *pswd_plain, *pswd_hash, *pswd_b64;
+	char *pw_plain, *pw_hash, *pw_b64;
 
-	pswd_plain = get_utf8_password(&len);
-	if (!pswd_plain)
+	pw_plain = get_utf8_password(password, &len);
+	if (!pw_plain)
 		return NULL;
 
-	pswd_hash = calloc(1, sizeof(mctx.hash) + 1);
-	if (!pswd_hash) {
-		free(pswd_plain);
+	pw_hash = calloc(1, sizeof(mctx.hash) + 1);
+	if (!pw_hash) {
+		free(pw_plain);
 		pr_err("Out of memory\n");
 		return NULL;
 	}
 
 	md4_init(&mctx);
-	md4_update(&mctx, pswd_plain, len);
-	md4_final(&mctx, pswd_hash);
+	md4_update(&mctx, pw_plain, len);
+	md4_final(&mctx, pw_hash);
 
-	pswd_b64 = base64_encode(pswd_hash,
+	pw_b64 = base64_encode(pw_hash,
 				 MD4_HASH_WORDS * sizeof(unsigned int));
 
-	__sanity_check(pswd_hash, pswd_b64);
-	free(pswd_plain);
-	free(pswd_hash);
-	return pswd_b64;
+	sanity_check_pw(pw_hash, pw_b64);
+	free(pw_plain);
+	free(pw_hash);
+	return pw_b64;
 }
 
 static void write_user(struct ksmbd_user *user)
@@ -248,7 +247,7 @@ static void write_remove_user_cb(gpointer key,
 {
 	struct ksmbd_user *user = (struct ksmbd_user *)value;
 
-	if (!g_ascii_strcasecmp(user->name, arg_account)) {
+	if (!g_ascii_strcasecmp(user->name, (char *)user_data)) {
 		pr_info("User '%s' removed\n", user->name);
 		return;
 	}
@@ -262,96 +261,91 @@ static void lookup_can_del_user(gpointer key,
 {
 	struct ksmbd_share *share = (struct ksmbd_share *)value;
 	int ret = 0;
-	int *abort_del_user = (int *)user_data;
+	char *account = (char *)user_data;
 
-	if (*abort_del_user)
+	if (!account)
 		return;
 
 	ret = shm_lookup_users_map(share,
 				   KSMBD_SHARE_ADMIN_USERS_MAP,
-				   arg_account);
+				   account);
 	if (ret == 0)
 		goto conflict;
 
 	ret = shm_lookup_users_map(share,
 				   KSMBD_SHARE_WRITE_LIST_MAP,
-				   arg_account);
+				   account);
 	if (ret == 0)
 		goto conflict;
 
 	ret = shm_lookup_users_map(share,
 				   KSMBD_SHARE_VALID_USERS_MAP,
-				   arg_account);
+				   account);
 	if (ret == 0)
 		goto conflict;
 
-	*abort_del_user = 0;
 	return;
 
 conflict:
 	pr_err("Share %s requires user %s to exist\n",
-		share->name, arg_account);
-	*abort_del_user = 1;
+		share->name, account);
+	account = NULL;
 }
 
-int command_add_user(char *pwddb, char *account, char *password)
+int user_add_cmd(char *db, char *account, char *password)
 {
 	struct ksmbd_user *user;
-	char *pswd;
+	char *pw;
 
-	arg_account = account;
-	arg_password = password;
-
-	user = usm_lookup_user(arg_account);
+	user = usm_lookup_user(account);
 	if (user) {
 		put_ksmbd_user(user);
-		pr_err("Account `%s' already exists\n", arg_account);
+		pr_err("Account `%s' already exists\n", account);
 		return -EEXIST;
 	}
 
-	pswd = get_hashed_b64_password();
-	if (!pswd) {
+	pw = get_hashed_b64_password(password);
+	if (!pw) {
 		pr_err("Out of memory\n");
 		return -EINVAL;
 	}
 
-	/* pswd is already g_strdup-ed */
-	if (usm_add_new_user(arg_account, pswd)) {
+	/* pw is already g_strdup-ed */
+	if (usm_add_new_user(account, pw)) {
 		pr_err("Could not add new account\n");
 		return -EINVAL;
 	}
 
-	pr_info("User '%s' added\n", arg_account);
-	if (__opendb_file(pwddb))
+	if (open_db(db, true))
 		return -EINVAL;
 
 	for_each_ksmbd_user(write_user_cb, NULL);
+
+	pr_info("User '%s' added\n", account);
+
 	close(conf_fd);
 	return 0;
 }
 
-int command_update_user(char *pwddb, char *account, char *password)
+int user_update_cmd(char *db, char *account, char *password)
 {
 	struct ksmbd_user *user;
-	char *pswd;
+	char *pw;
 
-	arg_password = password;
-	arg_account = account;
-
-	user = usm_lookup_user(arg_account);
+	user = usm_lookup_user(account);
 	if (!user) {
-		pr_err("Unknown account\n");
+		pr_err("Unknown account \"%s\"\n", account);
 		return -EINVAL;
 	}
 
-	pswd = get_hashed_b64_password();
-	if (!pswd) {
+	pw = get_hashed_b64_password(password);
+	if (!pw) {
 		pr_err("Out of memory\n");
 		put_ksmbd_user(user);
 		return -EINVAL;
 	}
 
-	if (usm_update_user_password(user, pswd)) {
+	if (usm_update_user_password(user, pw)) {
 		pr_err("Out of memory\n");
 		put_ksmbd_user(user);
 		return -ENOMEM;
@@ -359,9 +353,9 @@ int command_update_user(char *pwddb, char *account, char *password)
 
 	pr_info("User '%s' updated\n", account);
 	put_ksmbd_user(user);
-	free(pswd);
+	free(pw);
 
-	if (__opendb_file(pwddb))
+	if (open_db(db, true))
 		return -EINVAL;
 
 	for_each_ksmbd_user(write_user_cb, NULL);
@@ -369,28 +363,47 @@ int command_update_user(char *pwddb, char *account, char *password)
 	return 0;
 }
 
-int command_del_user(char *pwddb, char *account)
+int user_delete_cmd(char *db, char *account)
 {
-	int abort_del_user = 0;
+	char *abort_del_user = strdup(account);
 
-	arg_account = account;
-	if (!cp_key_cmp(global_conf.guest_account, arg_account)) {
+	if (!cp_key_cmp(global_conf.guest_account, account)) {
 		pr_err("User %s is a global guest account. Abort deletion.\n",
-				arg_account);
+				account);
 		return -EINVAL;
 	}
 
-	for_each_ksmbd_share(lookup_can_del_user, &abort_del_user);
+	for_each_ksmbd_share(lookup_can_del_user, abort_del_user);
 
-	if (abort_del_user) {
+	if (!abort_del_user) {
 		pr_err("Aborting user deletion\n");
 		return -EINVAL;
 	}
 
-	if (__opendb_file(pwddb))
+	if (open_db(db, true))
 		return -EINVAL;
 
-	for_each_ksmbd_user(write_remove_user_cb, NULL);
+	for_each_ksmbd_user(write_remove_user_cb, account);
 	close(conf_fd);
+	return 0;
+}
+
+static void list_users_cb(gpointer key, gpointer value, gpointer data)
+{
+	struct ksmbd_user *user = (struct ksmbd_user *)value;
+
+	pr_out("%s\n", user->name);
+}
+
+int user_list_cmd(char *db)
+{
+	if (open_db(db, false))
+		return -EINVAL;
+
+	pr_out("Users in %s:\n", db);
+	for_each_ksmbd_user(list_users_cb, NULL);
+	pr_out("\n");
+	close(conf_fd);
+
 	return 0;
 }
