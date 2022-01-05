@@ -62,9 +62,9 @@ AM_CONDITIONAL(HAVE_LIBKRB5, [test "$enable_krb5" != "no"])
 AC_CONFIG_FILES([
 	Makefile
 	lib/Makefile
-	mountd/Makefile
-	adduser/Makefile
-	addshare/Makefile
+	daemon/Makefile
+	user/Makefile
+	share/Makefile
 	control/Makefile
 ])
 
