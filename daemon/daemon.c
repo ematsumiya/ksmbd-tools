@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2021 SUSE LLC
  *
  *   linux-cifsd-devel@lists.sourceforge.net
  */
@@ -13,6 +14,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <fcntl.h>
@@ -24,6 +26,7 @@
 #include "ipc.h"
 #include "rpc.h"
 #include "worker.h"
+#include "daemon.h"
 #include "config_parser.h"
 #include "management/user.h"
 #include "management/share.h"
@@ -555,12 +558,92 @@ static struct option opts[] = {
 	{NULL,		0,			NULL,	 0  }
 };
 
+int daemon_shutdown_cmd(void)
+{
+	int fd, ret;
+
+	if (get_running_pid() == -ENOENT) {
+		pr_info("Server is not running.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	terminate_ksmbd_daemon();
+
+	fd = open(KSMBD_SYSFS_KILL_SERVER, O_WRONLY);
+	if (fd < 0) {
+		pr_debug("open failed (%d): %s\n", errno, strerr(errno));
+		return fd;
+	}
+
+	ret = write(fd, "hard", 4);
+	close(fd);
+	return ret;
+}
+
+int daemon_debug_cmd(char *debug_type)
+{
+	int i, fd, ret;
+	bool valid = false;
+	char buf[255] = { 0 };
+
+	for (i = 0; i < ARRAY_SIZE(debug_type_strings); i++) {
+		if (!strcmp(debug_type, debug_type_strings[i])) {
+			valid = true;
+			break;
+		}
+	}
+
+	if (!valid)
+		return -EINVAL;
+
+	ret = fd = open(KSMBD_SYSFS_DEBUG, O_RDWR);
+	if (fd < 0)
+		goto err_open;
+
+	ret = write(fd, debug_type, strlen(debug_type));
+	if (ret < 0)
+		goto err;
+
+	ret = read(fd, buf, 255);
+	if (ret < 0)
+		goto err;
+
+	pr_info("debug: %s\n", buf);
+err:
+	close(fd);
+err_open:
+	if (ret == -EBADF)
+		pr_debug("Can't open %s. Is ksmbd kernel module loaded?\n");
+	return ret;
+}
+
+int daemon_version_cmd(void)
+{
+	int fd, ret;
+	char version[255] = { 0 };
+
+	ret = fd = open(KSMBD_SYSFS_VERSION, O_RDONLY);
+	if (fd < 0)
+		goto err;
+
+	ret = read(fd, version, 255);
+	close(fd);
+
+err:
+	if (ret < 0)
+		pr_err("%s. Is kernel module loaded?\n", strerr(errno));
+	else
+		pr_info("ksmbd module version: %s\n", version);
+
+	return ret;
+}
+
 int main(int argc, char *argv[])
 {
 	int systemd_service = 0;
 	int c;
 
-	set_logger_app_name("ksmbd.mountd");
+	set_logger_app_name("ksmbd.daemon");
 	memset(&global_conf, 0x00, sizeof(struct smbconf_global));
 	global_conf.pwddb = PATH_PWDDB;
 	global_conf.smbconf = PATH_SMBCONF;
