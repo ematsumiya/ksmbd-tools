@@ -63,13 +63,13 @@ static int generic_event(int type, void *payload, size_t sz)
 	return 0;
 }
 
-static int parse_reload_configs(const char *pwddb, const char *smbconf)
+static int parse_reload_configs(const char *db, const char *smbconf)
 {
 	int ret;
 
 	pr_debug("Reload config\n");
 	usm_remove_all_users();
-	ret = cp_parse_pwddb(pwddb);
+	ret = cp_parse_db(db);
 	if (ret == -ENOENT) {
 		pr_err("User database file does not exist. %s\n",
 		       "Only guest sessions (if permitted) will work.");
@@ -91,7 +91,7 @@ static int handle_generic_event(struct nl_cache_ops *unused,
 				void *arg)
 {
 	if (ksmbd_health_status & KSMBD_SHOULD_RELOAD_CONFIG) {
-		parse_reload_configs(global_conf.pwddb, global_conf.smbconf);
+		parse_reload_configs(global_conf.db, global_conf.smbconf);
 		ksmbd_health_status &= ~KSMBD_SHOULD_RELOAD_CONFIG;
 	}
 
