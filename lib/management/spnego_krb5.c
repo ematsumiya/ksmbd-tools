@@ -15,8 +15,8 @@
 #include <netdb.h>
 #include <krb5.h>
 
-#include <management/spnego.h>
-#include <asn1.h>
+#include "management/spnego.h"
+#include "asn1.h"
 #include "spnego_mech.h"
 
 #ifndef HAVE_KRB5_AUTH_CON_GETRECVSUBKEY

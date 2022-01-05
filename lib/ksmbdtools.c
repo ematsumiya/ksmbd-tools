@@ -12,7 +12,7 @@
 #include <fcntl.h>
 
 #include <stdio.h>
-#include <ksmbdtools.h>
+#include "ksmbdtools.h"
 
 static const char *app_name = "unknown";
 static int log_open;

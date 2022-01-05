@@ -6,8 +6,8 @@
  *   Author(s): Namjae Jeon (linkinjeon@kernel.org)
  */
 
-#include <smbacl.h>
-#include <ksmbdtools.h>
+#include "smbacl.h"
+#include "ksmbdtools.h"
 #include <glib.h>
 
 static const struct smb_sid sid_domain = {1, 1, {0, 0, 0, 0, 0, 5},
