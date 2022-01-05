@@ -57,7 +57,7 @@ struct smbconf_global {
 	unsigned int		gen_subauth[3];
 	char			*krb5_keytab_file;
 	char			*krb5_service_name;
-	char			*pwddb;
+	char			*db;
 	char			*smbconf;
 };
 
@@ -73,7 +73,7 @@ extern struct smbconf_global global_conf;
 #define KSMBD_CONF_MAP_TO_GUEST_BAD_PASSWORD	(1 << 1)
 #define KSMBD_CONF_MAP_TO_GUEST_BAD_UID		(1 << 2)
 
-#define KSMBD_CONF_DEFAULT_NETBIOS_NAME	"KSMBD SERVER"
+#define KSMBD_CONF_DEFAULT_NETBIOS_NAME		"KSMBD SERVER"
 #define KSMBD_CONF_DEFAULT_SERVER_STRING	"SMB SERVER"
 #define KSMBD_CONF_DEFAULT_WORK_GROUP		"WORKGROUP"
 
@@ -85,9 +85,9 @@ extern struct smbconf_global global_conf;
 
 #define KSMBD_CONF_FILE_MAX		10000
 
-#define PATH_PWDDB	SYSCONFDIR "/ksmbd/ksmbdpwd.db"
-#define PATH_SMBCONF	SYSCONFDIR "/ksmbd/smb.conf"
-#define PATH_SUBAUTH	SYSCONFDIR "/ksmbd/ksmbd.subauth"
+#define PATH_USERS_DB			SYSCONFDIR "/ksmbd/users.db"
+#define PATH_OLD_USERS_DB		SYSCONFDIR "/ksmbd/ksmbdpwd.db"
+#define PATH_SMBCONF			SYSCONFDIR "/ksmbd/smb.conf"
 
 #define KSMBD_HEALTH_START		(0)
 #define KSMBD_HEALTH_RUNNING		(1 << 0)

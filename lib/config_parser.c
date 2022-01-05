@@ -697,9 +697,9 @@ int cp_parse_smbconf(const char *smbconf)
 				    GROUPS_CALLBACK_STARTUP_INIT);
 }
 
-int cp_parse_pwddb(const char *pwddb)
+int cp_parse_db(const char *db)
 {
-	return __mmap_parse_file(pwddb, usm_add_update_user_from_pwdentry);
+	return __mmap_parse_file(db, usm_add_update_user_from_pwdentry);
 }
 
 int cp_smbconfig_hash_create(const char *smbconf)
