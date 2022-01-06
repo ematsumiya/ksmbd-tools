@@ -623,7 +623,7 @@ static int __max_entries(struct ksmbd_dcerpc *dce, struct ksmbd_rpc_pipe *pipe)
 		return pipe->num_entries;
 
 	if (!dce->entry_size) {
-		pr_err("No ->entry_size() callback was provided\n");
+		pr_warn("No ->entry_size() callback was provided\n");
 		return pipe->num_entries;
 	}
 
@@ -1202,7 +1202,7 @@ int rpc_write_request(struct ksmbd_rpc_command *req,
 		return KSMBD_RPC_OK;
 
 	if (pipe->num_entries)
-		pr_err("RPC: A call on unflushed pipe. Pending %d\n",
+		pr_warn("RPC: A call on unflushed pipe. Pending %d\n",
 			pipe->num_entries);
 
 	dce = pipe->dce;
@@ -1275,6 +1275,6 @@ int rpc_close_request(struct ksmbd_rpc_command *req,
 		return 0;
 	}
 
-	pr_err("RPC: unknown pipe ID: %d\n", req->handle);
+	pr_warn("RPC: unknown pipe ID: %d\n", req->handle);
 	return KSMBD_RPC_OK;
 }

@@ -57,7 +57,7 @@ struct smbconf_global {
 	unsigned int		gen_subauth[3];
 	char			*krb5_keytab_file;
 	char			*krb5_service_name;
-	char			*db;
+	char			*users_db;
 	char			*smbconf;
 };
 
@@ -88,6 +88,7 @@ extern struct smbconf_global global_conf;
 #define PATH_USERS_DB			SYSCONFDIR "/ksmbd/users.db"
 #define PATH_OLD_USERS_DB		SYSCONFDIR "/ksmbd/ksmbdpwd.db"
 #define PATH_SMBCONF			SYSCONFDIR "/ksmbd/smb.conf"
+#define PATH_SUBAUTH			SYSCONFDIR "/ksmbd/ksmbd.subauth"
 
 #define KSMBD_HEALTH_START		(0)
 #define KSMBD_HEALTH_RUNNING		(1 << 0)

@@ -6,7 +6,7 @@
  *   linux-cifsd-devel@lists.sourceforge.net
  */
 
-#include <ksmbdtools.h>
+#include "ksmbdtools.h"
 
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -20,6 +20,7 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/types.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <signal.h>
 
@@ -35,69 +36,87 @@
 #include "management/spnego.h"
 #include "version.h"
 
-static int no_detach = 0;
 int ksmbd_health_status;
 static pid_t worker_pid;
 static int lock_fd = -1;
 
-typedef int (*worker_fn)(void);
+typedef int (*worker_fn)(void *);
 
-static void usage(int status)
+static ksmbd_daemon_cmd ksmbd_daemon_get_cmd(char *cmd)
 {
-	g_printerr(
-		"Usage: ksmbd.mountd [-p NUMBER] [-c SMBCONF] [-u PWDDB] [-n[WAY]]\n"
-		"       ksmbd.mountd {-V | -h}\n");
+	int i;
 
-	if (status != EXIT_SUCCESS)
-		g_printerr("Try `ksmbd.mountd --help' for more information.\n");
-	else
-		g_printerr(
-			"Run ksmbd.mountd user mode and ksmbd kernel mode daemons.\n"
-			"\n"
-			"Mandatory arguments to long options are mandatory for short options too.\n"
-			"  -p, --port=NUMBER       bind to TCP port NUMBER instead of " STR(KSMBD_CONF_DEFAULT_TCP_PORT) "\n"
-			"  -c, --config=SMBCONF    use SMBCONF as config file instead of\n"
-			"                          `" PATH_SMBCONF "'\n"
-			"  -u, --users=PWDDB       use PWDDB as user database instead of\n"
-			"                          `" PATH_PWDDB "'\n"
-			"  -n, --nodetach[=WAY]    do not detach process from foreground;\n"
-			"                          if WAY is 1, become process group leader (default);\n"
-			"                          if WAY is 0, detach\n"
-			"  -V, --version           output version information and exit\n"
-			"  -h, --help              display this help and exit\n"
-			"\n"
-			"ksmbd-tools home page: <https://github.com/cifsd-team/ksmbd-tools>\n");
+	if (!cmd)
+		return KSMBD_CMD_DAEMON_NONE;
+
+	for (i = 0; i < KSMBD_CMD_DAEMON_MAX; i++)
+		if (!strcmp(cmd, ksmbd_daemon_cmds_str[i]))
+			return (ksmbd_daemon_cmd)i;
+
+	return KSMBD_CMD_DAEMON_NONE;
 }
 
-static int show_version(void)
+static const char *ksmbd_daemon_get_cmd_str(ksmbd_daemon_cmd cmd)
 {
-	g_print("ksmbd-tools version : %s\n", KSMBD_TOOLS_VERSION);
-	return 0;
+	if (cmd > KSMBD_CMD_DAEMON_MAX)
+		return ksmbd_daemon_cmds_str[KSMBD_CMD_DAEMON_NONE];
+
+	return ksmbd_daemon_cmds_str[(int)cmd];
+}
+
+void daemon_usage(ksmbd_daemon_cmd cmd)
+{
+	const char *cmd_str = ksmbd_daemon_get_cmd_str(cmd);
+	int i;
+
+	switch(cmd) {
+	case KSMBD_CMD_DAEMON_START:
+		pr_out("Usage: ksmbdctl daemon start [options]\n");
+		pr_out("Start ksmbd userspace and kernel daemon.\n\n");
+		pr_out("%-30s%s", "  -p, --port=<num>", "TCP port number to listen on\n");
+		pr_out("%-30s%s", "  -c, --config=<config>", "Use specified smb.conf file\n");
+		pr_out("%-30s%s", "  -u, --usersdb=<config>", "Use specified users DB file\n");
+		pr_out("%-30s%s", "  -n, --nodetach", "Don't detach\n");
+		pr_out("%-30s%s", "  -s, --systemd", "Start daemon in systemd service mode\n");
+		pr_out("%-30s%s", "  -h, --help", "Show this help menu\n\n");
+		break;
+	case KSMBD_CMD_DAEMON_SHUTDOWN:
+		pr_out("Usage: ksmbdctl daemon shutdown\n");
+		pr_out("Shuts down the userspace daemon and the kernel server.\n\n");
+		break;
+	case KSMBD_CMD_DAEMON_DEBUG:
+		pr_out("Usage: ksmbdctl daemon debug <type>\n");
+		pr_out("Enable/disable debugging modules for ksmbd.\n\n");
+		pr_out("List of available types:\n");
+		for (i = 0; i < ARRAY_SIZE(debug_type_strings); i++)
+			pr_out("%s ", debug_type_strings[i]);
+		pr_out("\n\n");
+		break;
+	default:
+		pr_out("Usage: ksmbdctl daemon <subcommand> <args> [options]\n");
+		pr_out("ksmbd daemon management.\n\n");
+		pr_out("List of available subcommands:\n");
+		pr_out("%-20s%s", "start", "Start ksmbd userspace daemon\n");
+		pr_out("%-20s%s", "shutdown", "Shutdown ksmbd userspace daemon\n");
+		pr_out("%-20s%s", "debug", "Enable/disable debugging for ksmbd components\n\n");
+		break;
+	}
+
+	exit(EXIT_FAILURE);
 }
 
 static int handle_orphaned_lock_file(void)
 {
-	char *proc_ent = NULL;
-	char manager_pid[10] = {0, };
-	int pid = 0;
+	char proc_ent[64] = { 0 };
+	pid_t pid;
 	int fd;
 
-	fd = open(KSMBD_LOCK_FILE, O_RDONLY);
-	if (fd < 0)
+	pid = get_running_pid();
+	if (pid < 0)
 		return -EINVAL;
 
-	if (read(fd, &manager_pid, sizeof(manager_pid)) == -1) {
-		pr_debug("Unable to read main PID: %m\n");
-		close(fd);
-		return -EINVAL;
-	}
-
-	close(fd);
-
-	pid = strtol(manager_pid, NULL, 10);
-	proc_ent = g_strdup_printf("/proc/%d", pid);
+	snprintf(proc_ent, sizeof(proc_ent), "/proc/%d", pid);
 	fd = open(proc_ent, O_RDONLY);
-	g_free(proc_ent);
 	if (fd < 0) {
 		pr_info("Unlink orphaned '%s'\n", KSMBD_LOCK_FILE);
 		return unlink(KSMBD_LOCK_FILE);
@@ -105,17 +124,19 @@ static int handle_orphaned_lock_file(void)
 
 	close(fd);
 	pr_info("File '%s' belongs to pid %d\n", KSMBD_LOCK_FILE, pid);
+
 	return -EINVAL;
 }
 
 static int create_lock_file(void)
 {
-	char manager_pid[10];
-	size_t sz;
+	char daemon_pid[10];
+	size_t len;
 
 retry:
 	lock_fd = open(KSMBD_LOCK_FILE, O_CREAT | O_EXCL | O_WRONLY,
 			S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
+
 	if (lock_fd < 0) {
 		if (handle_orphaned_lock_file())
 			return -EINVAL;
@@ -125,9 +146,10 @@ retry:
 	if (flock(lock_fd, LOCK_EX | LOCK_NB) != 0)
 		return -EINVAL;
 
-	sz = snprintf(manager_pid, sizeof(manager_pid), "%d", getpid());
-	if (write(lock_fd, manager_pid, sz) == -1)
+	len = snprintf(daemon_pid, sizeof(daemon_pid), "%d", getpid());
+	if (write(lock_fd, daemon_pid, len) == -1)
 		pr_err("Unable to record main PID: %m\n");
+
 	return 0;
 }
 
@@ -136,7 +158,7 @@ retry:
  * Avoids a corrupt file if the write would be interrupted due
  * to a power failure.
  */
-static int write_file_safe(char *path, char *buff, size_t length, int mode)
+static int write_file_safe(char *path, char *buf, size_t len, int mode)
 {
 	int fd, ret = -1;
 	char *path_tmp = g_strdup_printf("%s.tmp", path);
@@ -150,7 +172,7 @@ static int write_file_safe(char *path, char *buff, size_t length, int mode)
 		goto err_out;
 	}
 
-	if (write(fd, buff, length) == -1) {
+	if (write(fd, buf, len) == -1) {
 		pr_err("Unable to write to %s: %m\n", path_tmp);
 		close(fd);
 		goto err_out;
@@ -177,9 +199,10 @@ static int create_subauth_file(void)
 	int ret;
 
 	rnd = g_rand_new();
-	subauth_buf = g_strdup_printf("%d:%d:%d\n", g_rand_int_range(rnd, 0, INT_MAX),
-		g_rand_int_range(rnd, 0, INT_MAX),
-		g_rand_int_range(rnd, 0, INT_MAX));
+	subauth_buf = g_strdup_printf("%d:%d:%d\n",
+				      g_rand_int_range(rnd, 0, INT_MAX),
+				      g_rand_int_range(rnd, 0, INT_MAX),
+				      g_rand_int_range(rnd, 0, INT_MAX));
 
 	ret = write_file_safe(PATH_SUBAUTH, subauth_buf, strlen(subauth_buf),
 		S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
@@ -223,12 +246,12 @@ static int wait_group_kill(int signo)
 	int status;
 
 	if (kill(worker_pid, signo) != 0)
-		pr_err("can't execute kill %d: %m\n", worker_pid);
+		pr_warn("can't execute kill %d: %m\n", worker_pid);
 
 	while (1) {
 		pid = waitpid(-1, &status, 0);
 		if (pid != 0) {
-			pr_debug("detected pid %d termination\n", pid);
+			pr_debug("Detected pid %d termination\n", pid);
 			break;
 		}
 		sleep(1);
@@ -280,17 +303,19 @@ static int parse_configs(char *db, char *smbconf)
 
 	ret = cp_parse_db(db);
 	if (ret == -ENOENT) {
-		pr_info("User database does not exist, "
-			"only guest sessions (if permitted) will work\n");
+		pr_warn("User database file does not exist. "
+			"Only guest sessions (if permitted) will work.\n");
 	} else if (ret) {
-		pr_err("Unable to parse user database\n");
+		pr_err("Unable to parse user database %s\n", db);
 		return ret;
 	}
 
 	ret = cp_parse_smbconf(smbconf);
-	if (ret)
-		pr_err("Unable to parse config file\n");
-	return ret;
+	if (ret) {
+		pr_err("Unable to parse configuration file '%s'\n", smbconf);
+		return ret;
+	}
+	return 0;
 }
 
 static void worker_process_free(void)
@@ -334,7 +359,7 @@ static void child_sig_handler(int signo)
 	exit(EXIT_SUCCESS);
 }
 
-static void manager_sig_handler(int signo)
+static void daemon_sig_handler(int signo)
 {
 	/*
 	 * Pass SIGHUP to worker, so it will reload configs
@@ -357,7 +382,7 @@ static void manager_sig_handler(int signo)
 	kill(0, SIGINT);
 }
 
-static int worker_process_init(void)
+static int worker_process_init(void *data)
 {
 	int ret;
 
@@ -376,7 +401,7 @@ static int worker_process_init(void)
 		goto out;
 	}
 
-	ret = parse_configs(global_conf.db, global_conf.smbconf);
+	ret = parse_configs(global_conf.users_db, global_conf.smbconf);
 	if (ret) {
 		pr_err("Failed to parse configuration files\n");
 		goto out;
@@ -425,32 +450,40 @@ out:
 	return ret;
 }
 
-static pid_t start_worker_process(worker_fn fn)
+static pid_t start_worker_process(worker_fn fn, void *data)
 {
 	int status = 0;
-	pid_t __pid;
+	pid_t pid;
 
-	__pid = fork();
-	if (__pid < 0) {
-		pr_err("Can't fork child process: `%m'\n");
+	pid = fork();
+	if (pid < 0) {
+		pr_err("Can't fork child process: %m\n");
 		return -EINVAL;
 	}
-	if (__pid == 0) {
-		status = fn() ? EXIT_FAILURE : EXIT_SUCCESS;
+	if (pid == 0) {
+		status = fn(data);
 		exit(status);
 	}
-	return __pid;
+
+	return pid;
 }
 
-static int manager_process_init(void)
+static int daemon_process_start(void *data)
 {
+	int no_detach;
 	/*
 	 * Do not chdir() daemon()'d process to '/'.
 	 */
 	int nochdir = 1;
 
-	setup_signals(manager_sig_handler);
-	if (no_detach == 0) {
+	if(prctl(PR_SET_NAME, "ksmbd-daemon\0", 0, 0, 0))
+		pr_info("Can't set program name: %m\n");
+
+	if (data)
+		no_detach = *(int *)data;
+
+	setup_signals(daemon_sig_handler);
+	if (!no_detach) {
 		pr_logger_init(PR_LOGGER_SYSLOG);
 		if (daemon(nochdir, 0) != 0) {
 			pr_err("Daemonization failed\n");
@@ -467,7 +500,7 @@ static int manager_process_init(void)
 	if (generate_sub_auth())
 		pr_debug("Failed to generate subauth for domain sid: %m\n");
 
-	worker_pid = start_worker_process(worker_process_init);
+	worker_pid = start_worker_process(worker_process_init, NULL);
 	if (worker_pid < 0)
 		goto out;
 
@@ -482,8 +515,7 @@ static int manager_process_init(void)
 			continue;
 		}
 
-		pr_err("WARNING: child process exited abnormally: %d\n",
-				child);
+		pr_warn("child process exited abnormally: %d\n", child);
 		if (child == -1) {
 			pr_err("waitpid() returned error code: %m\n");
 			goto out;
@@ -497,7 +529,7 @@ static int manager_process_init(void)
 
 		/* Ratelimit automatic restarts */
 		sleep(1);
-		worker_pid = start_worker_process(worker_process_init);
+		worker_pid = start_worker_process(worker_process_init, NULL);
 		if (worker_pid < 0)
 			goto out;
 	}
@@ -507,22 +539,34 @@ out:
 	return 0;
 }
 
-static struct option opts[] = {
-	{"port",	required_argument,	NULL,	'p' },
-	{"config",	required_argument,	NULL,	'c' },
-	{"users",	required_argument,	NULL,	'u' },
-	{"nodetach",	optional_argument,	NULL,	'n' },
-	{"help",	no_argument,		NULL,	'h' },
-	{"version",	no_argument,		NULL,	'V' },
-	{NULL,		0,			NULL,	 0  }
-};
+int daemon_start_cmd(int no_detach, int systemd_service)
+{
+	pid_t pid;
+	int ret = -EINVAL;
+
+	/* Check if process is already running */
+	pid = get_running_pid();
+	if (pid > 1) {
+		pr_err("ksmbd-daemon already running (%d)\n", pid);
+		exit(EXIT_FAILURE);
+	}
+
+	if (!systemd_service)
+		return daemon_process_start((void *)&no_detach);
+
+	pid = start_worker_process(daemon_process_start, (void *)&no_detach);
+	if (pid < 0)
+		return -EINVAL;
+
+	return 0;
+}
 
 int daemon_shutdown_cmd(void)
 {
 	int fd, ret;
 
 	if (get_running_pid() == -ENOENT) {
-		pr_info("Server is not running.\n");
+		pr_out("Server is not running.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -572,7 +616,7 @@ err:
 	close(fd);
 err_open:
 	if (ret == -EBADF)
-		pr_debug("Can't open %s. Is ksmbd kernel module loaded?\n");
+		pr_debug("Can't open %s. Is ksmbd kernel module loaded?\n", KSMBD_SYSFS_DEBUG);
 	return ret;
 }
 
@@ -592,64 +636,124 @@ err:
 	if (ret < 0)
 		pr_err("%m (is kernel module loaded?)\n");
 	else
-		pr_info("ksmbd module version: %s\n", version);
+		pr_out("ksmbd module version: %s\n", version);
 
 	return ret;
 }
 
-int main(int argc, char *argv[])
+int daemon_cmd(int argc, char *argv[])
 {
-	int ret = -EINVAL;
-	int c;
+	int ret = EXIT_FAILURE;
+	int no_detach = 0;
+	int systemd_service = 0;
+	char *debug_type;
+	const char *cmd_str;
+	ksmbd_daemon_cmd cmd = KSMBD_CMD_DAEMON_NONE;
+	int c, i;
 
-	set_logger_app_name("ksmbd.daemon");
+	if (argc < 2)
+		goto usage;
+
+	set_logger_app_name("ksmbd-daemon");
+
+	cmd = ksmbd_daemon_get_cmd(argv[1]);
+	cmd_str = ksmbd_daemon_get_cmd_str(cmd);
+
+	if (cmd == KSMBD_CMD_DAEMON_NONE)
+		goto usage;
+
+	if (cmd == KSMBD_CMD_DAEMON_VERSION ||
+	    cmd == KSMBD_CMD_DAEMON_SHUTDOWN)
+		goto skip_opts;
+
+	if (cmd == KSMBD_CMD_DAEMON_DEBUG) {
+		if (argc == 2)
+			goto usage;
+
+		debug_type = strdup(argv[2]);
+
+		ret = daemon_debug_cmd(debug_type);
+		if (ret == -EINVAL) {
+			pr_out("Invalid debug type \"%s\"\n\n", debug_type);
+			pr_out("List of available types:\n");
+			for (i = 0; i < ARRAY_SIZE(debug_type_strings); i++)
+				pr_out("%s ", debug_type_strings[i]);
+			pr_out("\n\n");
+		} else if (ret < 0) {
+			pr_out("Error enabling/disabling ksmbd debug\n");
+		}
+
+		free(debug_type);
+		return ret;
+	}
+
 	memset(&global_conf, 0x00, sizeof(struct smbconf_global));
-	global_conf.db = PATH_USERS_DB;
+	global_conf.users_db = PATH_USERS_DB;
 	global_conf.smbconf = PATH_SMBCONF;
+
 	pr_logger_init(PR_LOGGER_STDIO);
 
-	while ((c = getopt_long(argc, argv, "n::p:c:u:Vh", opts, NULL)) != EOF)
-		switch (c) {
+	optind = 1;
+	while ((c = getopt_long(argc, argv, "-:p:c:u:nsh", daemon_opts, NULL)) != EOF)
+		switch(c) {
+		case 1:
+			break;
 		case 'p':
 			global_conf.tcp_port = cp_get_group_kv_long(optarg);
-			pr_debug("TCP port option override\n");
+			pr_info("Overriding TCP port to %hu\n", global_conf.tcp_port);
 			break;
 		case 'c':
 			global_conf.smbconf = g_strdup(optarg);
+			if (!global_conf.smbconf)
+				goto oom;
 			break;
 		case 'u':
-			global_conf.db = g_strdup(optarg);
+			global_conf.users_db = g_strdup(optarg);
+			if (!global_conf.users_db)
+				goto oom;
 			break;
 		case 'n':
-			if (!optarg)
-				no_detach = 1;
-			else
-				no_detach = cp_get_group_kv_long(optarg);
+			no_detach = 1;
 			break;
-		case 'V':
-			ret = show_version();
-			goto out;
-		case 'h':
-			ret = 0;
-			/* Fall through */
+		case 's':
+			systemd_service = 1;
+			break;
+		case ':':
 		case '?':
+		case 'h':
 		default:
-			usage(ret ? EXIT_FAILURE : EXIT_SUCCESS);
-			goto out;
+			goto usage;
 		}
 
-	if (argc > optind) {
-		usage(ret ? EXIT_FAILURE : EXIT_SUCCESS);
-		goto out;
+skip_opts:
+	switch (cmd) {
+	case KSMBD_CMD_DAEMON_START:
+		setup_signals(daemon_sig_handler);
+		ret = daemon_start_cmd(no_detach, systemd_service);
+		if (ret != 0) {
+			pr_err("Error starting daemon\n");
+			exit(EXIT_FAILURE);
+		}
+		break;
+	case KSMBD_CMD_DAEMON_SHUTDOWN:
+		ret = daemon_shutdown_cmd();
+		if (ret < 0) {
+			pr_err("Error shutting down server. Is ksmbd kernel module loaded?\n");
+			exit(EXIT_FAILURE);
+		}
+		pr_out("Server was shut down.\n");
+		break;
+	case KSMBD_CMD_DAEMON_VERSION:
+		ret = daemon_version_cmd();
+		break;
 	}
 
-	if (!global_conf.smbconf || !global_conf.db) {
-		pr_err("Out of memory\n");
-		goto out;
-	}
+	return ret;
 
-	setup_signals(manager_sig_handler);
-	ret = manager_process_init();
-out:
-	return ret ? EXIT_FAILURE : EXIT_SUCCESS;
+usage:
+	daemon_usage(cmd);
+	exit(EXIT_FAILURE);
+oom:
+	pr_err("Out of memory\n");
+	return -ENOMEM;
 }
