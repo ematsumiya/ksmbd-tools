@@ -5,16 +5,17 @@
 ##### Install prerequisite packages:
 
 - For Ubuntu:
-  - `sudo apt-get install autoconf libtool pkg-config libnl-3-dev libnl-genl-3-dev libglib2.0-dev`
+  - `sudo apt-get install autoconf libtool pkg-config libnl-3-dev libnl-genl-3-dev libglib2.0-dev libkrb5-dev`
 
 - For Fedora, RHEL:
-  - `sudo yum install autoconf automake libtool glib2-devel libnl3-devel`
+  - `sudo yum install autoconf automake libtool glib2-devel libnl3-devel krb5-devel`
 
 - For CentOS:
-  - `sudo yum install glib2-devel libnl3-devel`
+  - `sudo yum install glib2-devel libnl3-devel krb5-devel`
 
 - For openSUSE:
-  - `sudo zypper install glib2-devel libnl3-devel`
+  - `sudo zypper install glib2-devel libnl3-devel krb5-devel`
+
 
 ##### Building:
 
@@ -32,31 +33,31 @@ All administration tasks must be done as root.
 
 ##### Setup:
 
-- Install ksmbd kernel driver
+- Install ksmbd kernel driver (requires CONFIG_SMB_SERVER=y)
 	- `modprobe ksmbd`
 - Create user/password for SMB share
 	- `mkdir /etc/ksmbd`
-	- `ksmbd.adduser -a <username>`
-	- Enter password for SMB share access
+	- `ksmbdctl user add <username>`
+	- Enter password for user when prompted
 - Create `/etc/ksmbd/smb.conf` file
 	- Refer `smb.conf.example`
 - Add share to `smb.conf`
-	- This can be done manually or with `ksmbd.addshare`, e.g.:
-	- `ksmbd.addshare -a myshare -o "guest ok = yes, writable = yes, path = /mnt/data"`
+	- This can be done either manually or with `ksmbdctl`, e.g.:
+	- `ksmbdctl share add myshare -o "guest ok = yes, writable = yes, path = /mnt/data"`
 
 	- Note: share options (-o) must always be enclosed with double quotes ("...").
 - Start ksmbd user space daemon
-	- `ksmbd.mountd`
-- Access share from Windows or Linux using CIFS
+	- `ksmbdctl daemon start`
+- Access share from Windows or Linux
 
 
 ##### Stopping and restarting the daemon:
 
-First, kill user and kernel space daemon
-  - `ksmbd.control -s`
+First, kill user and kernel space daemon:
+  - `ksmbdctl daemon shutdown`
 
 Then, to restart the daemon, run:
-  - `ksmbd.mountd`
+  - `ksmbdctl daemon start`
 
 Or to shut it down completely:
   - `rmmod ksmbd`
@@ -64,25 +65,27 @@ Or to shut it down completely:
 
 ### Debugging
 
-- Enable all component prints
-  - `ksmbd.control -d "all"`
-- Enable a single component (see below)
-  - `ksmbd.control -d "smb"`
-- Run the command with the same component name again to disable it
+- Enable debugging all components
+  - `ksmbdctl daemon debug "all"`
+- Enable debugging a single component (see more below)
+  - `ksmbdctl daemon debug "smb"`
+- Run the commands above with the same component name again to disable it
 
 Currently available debug components:
 smb, auth, vfs, oplock, ipc, conn, rdma
 
 
-### More...
+### User management
 
-- ksmbd.adduser
-  - Adds (-a), updates (-u), or deletes (-d) a user from user database.
-  - Default database file is `/etc/ksmbd/users.db`
+- ksmbdctl user
+  - Adds, updates, deletes, or lists users from database.
+  - Default database file is `/etc/ksmbd/users.db`, but can be changed with '-d'
+    option.
 
-- ksmbd.addshare
-  - Adds (-a), updates (-u), or deletes (-d) a net share from config file.
-  - Default config file is `/etc/ksmbd/smb.conf`
+- ksmbdctl share
+  - Adds, updates, deletes, or lists net shares from config file.
+  - Default config file is `/etc/ksmbd/smb.conf`, but can be changed with '-c'
+    option.
 
-`ksmbd.addshare` does not modify `[global]` section in config file; only net
+`ksmbdctl share add` does not modify `[global]` section in config file; only net
 share configs are supported at the moment.
