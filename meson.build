@@ -111,10 +111,6 @@ else
 endif
 
 subdir('lib')
-subdir('addshare')
-subdir('adduser')
-subdir('control')
-subdir('mountd')
 
 install_data(
   sources: 'smb.conf.example',
@@ -138,3 +134,47 @@ configure_file(
     'runstatedir': runstatedir,
   },
 )
+
+share_files = [
+  'share/share.c',
+  'share/share_admin.c',
+  'share/share_admin.h',
+]
+
+user_files = [
+  'user/md4_hash.c',
+  'user/user_admin.c',
+  'user/user.c',
+  'user/md4_hash.h',
+  'user/user_admin.h',
+]
+
+daemon_files = [
+  'daemon/worker.c',
+  'daemon/ipc.c',
+  'daemon/rpc.c',
+  'daemon/rpc_srvsvc.c',
+  'daemon/rpc_wkssvc.c',
+  'daemon/daemon.c',
+  'daemon/smbacl.c',
+  'daemon/rpc_samr.c',
+  'daemon/rpc_lsarpc.c',
+]
+
+ksmbdctl = executable(
+  'ksmbdctl',
+  'ksmbdctl.c',
+  share_files,
+  user_files,
+  daemon_files,
+  dependencies: [
+    glib_dep,
+    libnl_dep,
+  ],
+  include_directories: tools_incdir,
+  link_with: libksmbdtools,
+  install: true,
+  install_dir: get_option('sbindir'),
+  c_args: '-DSYSCONFDIR="@0@"'.format(get_option('prefix') / get_option('sysconfdir')),
+)
+

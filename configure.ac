@@ -135,9 +135,6 @@ AM_CONDITIONAL(HAVE_LIBKRB5, [test "x$enable_krb5" != xno])
 AC_CONFIG_FILES([
 	Makefile
 	lib/Makefile
-	daemon/Makefile
-	user/Makefile
-	share/Makefile
 ])
 
 AC_OUTPUT
