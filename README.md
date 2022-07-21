@@ -90,9 +90,9 @@ mkdir -vp $HOME/MyShare
 
 # add a share (case insensitive) to the default config file
 # `--options' takes a single argument, so quote it accordingly in your shell
-# note that the shell expands `$HOME' here, `ksmbd.addshare' will never do it
-# newline is the only safe character to use as an option separator
-sudo ksmbd.addshare --add-share=MyShare --options="
+# note that the shell expands `$HOME' here, `ksmbdctl share add' will never do
+# it, newline is the only safe character to use as an option separator
+sudo ksmbdctl share add MyShare -o "
 path = $HOME/MyShare
 read only = no
 "
@@ -105,18 +105,18 @@ read only = no
 #
 # the `[global]' section contains options that are not share specific
 # you can set the default options for all shares by adding them to `[global]'
-# `ksmbd.addshare' cannot edit `[global]', so do it with a text editor
+# `ksmbdctl share' cannot edit `[global]', so do it with a text editor
 # see `Documentation/configuration.txt' for more details
 
 # add a user to the default user database
 # you will be prompted for a password
-sudo ksmbd.adduser --add-user=MyUser
+sudo ksmbdctl user add MyUser
 
 # there is no UNIX user called `MyUser' so it has to be mapped to one
 # we can force all users accessing the share to map to a UNIX user and group
 
 # update the options of a share in the default config file
-sudo ksmbd.addshare --update-share=MyShare --options="
+sudo ksmbdctl share update MyShare -o "
 force user = $USER
 force group = $USER
 "
@@ -135,7 +135,7 @@ sudo modprobe ksmbd
 
 # run the user mode and kernel mode daemons
 # all interfaces are listened to by default
-sudo ksmbd.mountd
+sudo ksmbdctl daemon start
 
 # mount the new share with cifs-utils and authenticate as the new user
 # you will be prompted for a password
@@ -149,23 +149,24 @@ sudo umount /mnt
 
 # update the password of a user in the default user database
 # `--password' can be used to give the password instead of prompting
-sudo ksmbd.adduser --update-user=MyUser --password=MyNewPassword
+sudo ksmbdctl user update MyUser -p MyNewPassword
 
 # delete a user from the default user database
-sudo ksmbd.adduser --del-user=MyUser
+sudo ksmbdctl user delete MyUser
 
 # utilities notify ksmbd of changes by sending SIGHUP to the manager process
 # you can do this manually as well when you have e.g. edited the config file
 sudo ksmbd.control --reload
 
 # toggle debug printing of the `all' component
-sudo ksmbd.control --debug=all
+sudo ksmbdctl daemon debug all
 
 # some config file changes require restarting ksmbd
-# restarting ksmbd means you run `ksmbd.mountd' again after you shut it down
+# restarting ksmbd means you run `ksmbdctl daemon start' again after you shut
+# it down
 
 # shutdown the user and kernel mode daemons
-sudo ksmbd.control --shutdown
+sudo ksmbdctl daemon shutdown
 
 # remove the kernel module
 sudo modprobe -r ksmbd
