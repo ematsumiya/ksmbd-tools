@@ -53,10 +53,7 @@ mkdir -p %{buildroot}/%{_sysconfdir}/ksmbd
 install -m 644 -p smb.conf.example %{buildroot}%{_sysconfdir}/ksmbd
 
 %files
-%{_sbindir}/ksmbd.addshare
-%{_sbindir}/ksmbd.adduser
-%{_sbindir}/ksmbd.control
-%{_sbindir}/ksmbd.mountd
+%{_sbindir}/ksmbdctl
 %dir %{_sysconfdir}/ksmbd
 %config %{_sysconfdir}/ksmbd/smb.conf.example
 
