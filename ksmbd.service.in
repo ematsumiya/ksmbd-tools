@@ -7,9 +7,9 @@ After=modprobe@ksmbd.service network.target network-online.target
 [Service]
 Type=forking
 PIDFile=@runstatedir@/ksmbd.lock
-ExecStart=@sbindir@/ksmbd.mountd
-ExecReload=@sbindir@/ksmbd.control --reload
-ExecStop=@sbindir@/ksmbd.control --shutdown
+ExecStart=@sbindir@/ksmbdctl daemon start
+#ExecReload=@sbindir@/ksmbdctl daemon reload # TODO implement "daemon reload" subcmd
+ExecStop=@sbindir@/ksmbdctl daemon shutdown
 
 [Install]
 WantedBy=multi-user.target
