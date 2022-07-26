@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2019 Samsung Electronics Co., Ltd.
- *   Copyright (C) 2021 SUSE LLC
+ *   Copyright (C) 2022 SUSE LLC
  *
  *   linux-cifsd-devel@lists.sourceforge.net
  */
@@ -18,33 +18,11 @@
 #include <errno.h>
 #include <ctype.h>
 
-#include "config_parser.h"
-#include "ksmbdtools.h"
 #include "management/share.h"
 #include "linux/ksmbd_server.h"
+#include "config_parser.h"
 #include "share_admin.h"
-
-static ksmbd_share_cmd ksmbd_share_get_cmd(char *cmd)
-{
-	int i;
-
-	if (!cmd)
-		return KSMBD_CMD_SHARE_NONE;
-
-	for (i = 1; i < KSMBD_CMD_SHARE_MAX; i++)
-		if (!strcmp(cmd, ksmbd_share_cmds_str[i]))
-			return (ksmbd_share_cmd)i;
-
-	return KSMBD_CMD_SHARE_NONE;
-}
-
-static const char *ksmbd_share_get_cmd_str(ksmbd_share_cmd cmd)
-{
-	if (cmd > KSMBD_CMD_SHARE_MAX)
-		return ksmbd_share_cmds_str[KSMBD_CMD_SHARE_NONE];
-
-	return ksmbd_share_cmds_str[(int)cmd];
-}
+#include "ksmbdtools.h"
 
 static int parse_configs(char *smbconf)
 {
@@ -86,14 +64,14 @@ static int sanity_check_share_name_simple(char *name)
 void share_usage(ksmbd_share_cmd cmd)
 {
 	int i;
-	const char *cmd_str = ksmbd_share_get_cmd_str(cmd);
 
 	switch (cmd) {
 	case KSMBD_CMD_SHARE_ADD:
 	case KSMBD_CMD_SHARE_UPDATE:
 		pr_out("Usage: ksmbdctl share %s <share_name> [-c <file>] -o "
 		       "\"op1 = val1 \\n op2 = val2 \\n ...\" "
-		       "(use newlines as options separator)\n", cmd_str);
+		       "(use newlines as options separator)\n",
+		       ksmbd_share_cmds[cmd].string);
 		pr_out("Adds or updates a share to smb.conf file.\n\n");
 		pr_out("%-30s%s", "  -c, --conf=<file>", "Use <file> as smb.conf\n");
 		pr_out("%-30s%s", "  -o, --options=<options>", "Specify options for share\n\n");
@@ -123,9 +101,10 @@ int share_cmd(int argc, char *argv[])
 {
 	int ret = EXIT_FAILURE;
 	char *smbconf = PATH_SMBCONF;
+	const struct ksmbd_cmd_map *cmd_map;
 	char *share_name = NULL;
 	char *options = NULL;
-	ksmbd_share_cmd cmd = KSMBD_CMD_SHARE_NONE;
+	int cmd = KSMBD_CMD_SHARE_MAX;
 	int c;
 
 	if (argc < 2)
@@ -133,11 +112,11 @@ int share_cmd(int argc, char *argv[])
 
 	set_logger_app_name("ksmbd-share");
 
-	cmd = ksmbd_share_get_cmd(argv[1]);
-
-	if (cmd == KSMBD_CMD_SHARE_NONE)
+	cmd_map = ksmbd_share_cmd_map(argv[1]);
+	if (!cmd_map || cmd_map->cmd == -1)
 		goto usage;
 
+	cmd = cmd_map->cmd;
 	if(argc == 2 && cmd != KSMBD_CMD_SHARE_LIST)
 		goto missing_arg;
 
@@ -174,7 +153,8 @@ int share_cmd(int argc, char *argv[])
 		goto missing_arg;
 
 	if (cmd != KSMBD_CMD_SHARE_DELETE && !options) {
-		pr_out("Subcommand \"%s\" requires '-o' option set.\n\n", ksmbd_share_get_cmd_str(cmd));
+		pr_out("Subcommand \"%s\" requires '-o' option set.\n\n",
+		       cmd_map->string);
 		goto usage;
 	}
 
@@ -220,8 +200,9 @@ out:
 	cp_smbconfig_destroy();
 	return ret;
 missing_arg:
-	if (cmd > KSMBD_CMD_SHARE_NONE && cmd < KSMBD_CMD_SHARE_MAX)
-		pr_out("Subcommand \"%s\" requires an argument.\n\n", ksmbd_share_get_cmd_str(cmd));
+	if (cmd >= 0 && cmd < KSMBD_CMD_SHARE_MAX)
+		pr_out("Subcommand \"%s\" requires an argument.\n\n",
+		       cmd_map->string);
 usage:
 	share_usage(cmd);
 

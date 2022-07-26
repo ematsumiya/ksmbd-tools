@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
- *   Copyright (C) 2021 SUSE LLC
+ * Copyright (C) 2018 Samsung Electronics Co., Ltd.
+ * Copyright (C) 2022 SUSE LLC
  *
- *   linux-cifsd-devel@lists.sourceforge.net
+ * Author: Enzo Matsumiya <ematsumiya@suse.de>
+ *
+ * linux-cifsd-devel@lists.sourceforge.net
  */
-
 #include "ksmbdtools.h"
 
 #ifndef _GNU_SOURCE
@@ -34,6 +35,7 @@
 #include "management/session.h"
 #include "management/tree_conn.h"
 #include "management/spnego.h"
+#include "ksmbdtools.h"
 #include "version.h"
 
 int ksmbd_health_status;
@@ -42,47 +44,29 @@ static int lock_fd = -1;
 
 typedef int (*worker_fn)(void *);
 
-static ksmbd_daemon_cmd ksmbd_daemon_get_cmd(char *cmd)
-{
-	int i;
-
-	if (!cmd)
-		return KSMBD_CMD_DAEMON_NONE;
-
-	for (i = 0; i < KSMBD_CMD_DAEMON_MAX; i++)
-		if (!strcmp(cmd, ksmbd_daemon_cmds_str[i]))
-			return (ksmbd_daemon_cmd)i;
-
-	return KSMBD_CMD_DAEMON_NONE;
-}
-
-static const char *ksmbd_daemon_get_cmd_str(ksmbd_daemon_cmd cmd)
-{
-	if (cmd > KSMBD_CMD_DAEMON_MAX)
-		return ksmbd_daemon_cmds_str[KSMBD_CMD_DAEMON_NONE];
-
-	return ksmbd_daemon_cmds_str[(int)cmd];
-}
-
 void daemon_usage(ksmbd_daemon_cmd cmd)
 {
-	const char *cmd_str = ksmbd_daemon_get_cmd_str(cmd);
 	int i;
 
 	switch(cmd) {
 	case KSMBD_CMD_DAEMON_START:
 		pr_out("Usage: ksmbdctl daemon start [options]\n");
 		pr_out("Start ksmbd userspace and kernel daemon.\n\n");
-		pr_out("%-30s%s", "  -p, --port=<num>", "TCP port number to listen on\n");
-		pr_out("%-30s%s", "  -c, --config=<config>", "Use specified smb.conf file\n");
-		pr_out("%-30s%s", "  -u, --usersdb=<config>", "Use specified users DB file\n");
+		pr_out("%-30s%s", "  -p, --port=<num>",
+		       "TCP port number to listen on\n");
+		pr_out("%-30s%s", "  -c, --config=<config>",
+		       "Use specified smb.conf file\n");
+		pr_out("%-30s%s", "  -u, --usersdb=<config>",
+		      "Use specified users DB file\n");
 		pr_out("%-30s%s", "  -n, --nodetach", "Don't detach\n");
-		pr_out("%-30s%s", "  -s, --systemd", "Start daemon in systemd service mode\n");
+		pr_out("%-30s%s", "  -s, --systemd",
+		       "Start daemon in systemd service mode\n");
 		pr_out("%-30s%s", "  -h, --help", "Show this help menu\n\n");
 		break;
 	case KSMBD_CMD_DAEMON_SHUTDOWN:
 		pr_out("Usage: ksmbdctl daemon shutdown\n");
-		pr_out("Shuts down the userspace daemon and the kernel server.\n\n");
+		pr_out("Shuts down the userspace daemon and the kernel server."
+		       "\n\n");
 		break;
 	case KSMBD_CMD_DAEMON_DEBUG:
 		pr_out("Usage: ksmbdctl daemon debug <type>\n");
@@ -93,12 +77,15 @@ void daemon_usage(ksmbd_daemon_cmd cmd)
 		pr_out("\n\n");
 		break;
 	default:
-		pr_out("Usage: ksmbdctl daemon <subcommand> <args> [options]\n");
+		pr_out("Usage: ksmbdctl daemon <subcommand> <args> [options]"
+		       "\n");
 		pr_out("ksmbd daemon management.\n\n");
 		pr_out("List of available subcommands:\n");
 		pr_out("%-20s%s", "start", "Start ksmbd userspace daemon\n");
-		pr_out("%-20s%s", "shutdown", "Shutdown ksmbd userspace daemon\n");
-		pr_out("%-20s%s", "debug", "Enable/disable debugging for ksmbd components\n\n");
+		pr_out("%-20s%s", "shutdown", "Shutdown ksmbd userspace daemon"
+		       "\n");
+		pr_out("%-20s%s", "debug", "Enable/disable debugging for ksmbd "
+		       "components\n\n");
 		break;
 	}
 
@@ -542,7 +529,6 @@ out:
 int daemon_start_cmd(int no_detach, int systemd_service)
 {
 	pid_t pid;
-	int ret = -EINVAL;
 
 	/* Check if process is already running */
 	pid = get_running_pid();
@@ -616,7 +602,8 @@ err:
 	close(fd);
 err_open:
 	if (ret == -EBADF)
-		pr_debug("Can't open %s. Is ksmbd kernel module loaded?\n", KSMBD_SYSFS_DEBUG);
+		pr_debug("Can't open %s. Is ksmbd kernel module loaded?\n",
+			 KSMBD_SYSFS_DEBUG);
 	return ret;
 }
 
@@ -645,25 +632,23 @@ int daemon_cmd(int argc, char *argv[])
 {
 	int ret = EXIT_FAILURE;
 	int no_detach = 0;
+	const struct ksmbd_cmd_map *cmd_map;
 	int systemd_service = 0;
 	char *debug_type;
-	const char *cmd_str;
-	ksmbd_daemon_cmd cmd = KSMBD_CMD_DAEMON_NONE;
 	int c, i;
+	int cmd = KSMBD_CMD_DAEMON_MAX;
 
 	if (argc < 2)
 		goto usage;
 
 	set_logger_app_name("ksmbd-daemon");
 
-	cmd = ksmbd_daemon_get_cmd(argv[1]);
-	cmd_str = ksmbd_daemon_get_cmd_str(cmd);
-
-	if (cmd == KSMBD_CMD_DAEMON_NONE)
+	cmd_map = ksmbd_daemon_cmd_map(argv[1]);
+	if (!cmd_map || cmd_map->cmd == -1)
 		goto usage;
 
-	if (cmd == KSMBD_CMD_DAEMON_VERSION ||
-	    cmd == KSMBD_CMD_DAEMON_SHUTDOWN)
+	cmd = cmd_map->cmd;
+	if (cmd == KSMBD_CMD_DAEMON_VERSION || cmd == KSMBD_CMD_DAEMON_SHUTDOWN)
 		goto skip_opts;
 
 	if (cmd == KSMBD_CMD_DAEMON_DEBUG) {
@@ -738,7 +723,8 @@ skip_opts:
 	case KSMBD_CMD_DAEMON_SHUTDOWN:
 		ret = daemon_shutdown_cmd();
 		if (ret < 0) {
-			pr_err("Error shutting down server. Is ksmbd kernel module loaded?\n");
+			pr_err("Error shutting down server. "
+			       "Is ksmbd kernel module loaded?\n");
 			exit(EXIT_FAILURE);
 		}
 		pr_out("Server was shut down.\n");

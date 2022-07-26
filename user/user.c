@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
- *   Copyright (C) 2021 SUSE LLC
+ * Copyright (C) 2018 Samsung Electronics Co., Ltd.
+ * Copyright (C) 2022 SUSE LLC
  *
- *   linux-cifsd-devel@lists.sourceforge.net
+ * Author: Enzo Matsumiya <ematsumiya@suse.de>
+ *
+ * linux-cifsd-devel@lists.sourceforge.net
  */
-
 #include <glib.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -18,46 +19,25 @@
 #include <errno.h>
 #include <ctype.h>
 
+#include "linux/ksmbd_server.h"
+#include "management/share.h"
+#include "management/user.h"
 #include "config_parser.h"
 #include "ksmbdtools.h"
-#include "management/user.h"
-#include "management/share.h"
 #include "user_admin.h"
-#include "linux/ksmbd_server.h"
-
-static ksmbd_user_cmd ksmbd_user_get_cmd(char *cmd)
-{
-	int i;
-
-	if (!cmd)
-		return KSMBD_CMD_USER_NONE;
-
-	for (i = 1; i < KSMBD_CMD_USER_MAX; i++)
-		if (!strcmp(cmd, ksmbd_user_cmds_str[i]))
-			return (ksmbd_user_cmd)i;
-
-	return KSMBD_CMD_USER_NONE;
-}
-
-static const char *ksmbd_user_get_cmd_str(ksmbd_user_cmd cmd)
-{
-	if (cmd > KSMBD_CMD_USER_MAX)
-		return ksmbd_user_cmds_str[KSMBD_CMD_USER_NONE];
-
-	return ksmbd_user_cmds_str[(int)cmd];
-}
 
 void user_usage(ksmbd_user_cmd cmd)
 {
-	const char *cmd_str = ksmbd_user_get_cmd_str(cmd);
-
 	switch (cmd) {
 	case KSMBD_CMD_USER_ADD:
 	case KSMBD_CMD_USER_UPDATE:
-		pr_out("Usage: ksmbdctl user %s <username> [-p <password>] [-d <file>]\n", cmd_str);
+		pr_out("Usage: ksmbdctl user %s <username> [-p <password>] "
+		       "[-d <file>]\n", ksmbd_user_cmds[cmd].string);
 		pr_out("Adds or updates a user to the database.\n\n");
-		pr_out("%-30s%s", "  -p, --password=<password>", "Use <password> for <username>\n");
-		pr_out("%-30s%s", "  -d, --database=<file>", "Use <file> as database\n\n");
+		pr_out("%-30s%s", "  -p, --password=<password>",
+		      "Use <password> for <username>\n");
+		pr_out("%-30s%s", "  -d, --database=<file>",
+		       "Use <file> as database\n\n");
 		break;
 	case KSMBD_CMD_USER_DELETE:
 		pr_out("Usage: ksmbdctl user delete <username>\n");
@@ -66,7 +46,8 @@ void user_usage(ksmbd_user_cmd cmd)
 	case KSMBD_CMD_USER_LIST:
 		pr_out("Usage: ksmbdctl user list\n");
 		pr_out("List users in database.\n\n");
-		pr_out("%-30s%s", "  -d, --database=<file>", "Use <file> as database\n\n");
+		pr_out("%-30s%s", "  -d, --database=<file>",
+		       "Use <file> as database\n\n");
 		break;
 	default:
 		pr_out("Usage: ksmbdctl user <subcommand> <args> [options]\n");
@@ -76,10 +57,11 @@ void user_usage(ksmbd_user_cmd cmd)
 		pr_out("%-20s%s", "  delete", "Delete a user\n");
 		pr_out("%-20s%s", "  update", "Update an existing user\n");
 		pr_out("%-20s%s", "  list", "List users in user database\n\n");
-		break;
+
+		exit(EXIT_FAILURE);
 	}
 
-	exit(EXIT_FAILURE);
+	exit(0);
 }
 
 static int parse_configs(char *db)
@@ -126,8 +108,8 @@ int user_cmd(int argc, char *argv[])
 	char *db = PATH_USERS_DB;
 	char *login = NULL;
 	char *pw = NULL;
-	ksmbd_user_cmd cmd = KSMBD_CMD_USER_NONE;
-	const char *cmd_str = NULL;
+	const struct ksmbd_cmd_map *cmd_map;
+	int cmd = KSMBD_CMD_USER_MAX;
 	int c;
 
 	if (argc < 2)
@@ -135,12 +117,11 @@ int user_cmd(int argc, char *argv[])
 
 	set_logger_app_name("ksmbd-user");
 
-	cmd = ksmbd_user_get_cmd(argv[1]);
-	cmd_str = ksmbd_user_get_cmd_str(cmd);
-
-	if (cmd == KSMBD_CMD_USER_NONE)
+	cmd_map = ksmbd_user_cmd_map(argv[1]);
+	if (!cmd_map || cmd_map->cmd == -1)
 		goto usage;
 
+	cmd = cmd_map->cmd;
 	if (cmd != KSMBD_CMD_USER_LIST) {
 		if (argc == 2)
 			goto missing_arg;
@@ -229,8 +210,9 @@ out:
 	return ret;
 
 missing_arg:
-	if (cmd > KSMBD_CMD_USER_NONE && cmd < KSMBD_CMD_USER_MAX)
-		pr_out("Subcommand \"%s\" requires an argument.\n\n", cmd_str);
+	if (cmd >= 0 && cmd < KSMBD_CMD_USER_MAX)
+		pr_out("Subcommand \"%s\" requires an argument.\n\n",
+		       cmd_map->string);
 usage:
 	user_usage(cmd);
 

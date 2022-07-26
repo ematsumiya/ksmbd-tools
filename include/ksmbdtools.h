@@ -177,4 +177,50 @@ void notify_ksmbd_daemon(void);
 void terminate_ksmbd_daemon(void);
 int test_file_access(char *conf);
 
+/*
+ * ksmbdctl commands
+ */
+struct ksmbd_cmd_map {
+	int cmd;
+	const char *string;
+};
+
+typedef enum {
+       KSMBD_CMD_SHARE		= 0,
+       KSMBD_CMD_USER,
+       KSMBD_CMD_DAEMON,
+       KSMBD_CMD_VERSION,
+       KSMBD_CMD_HELP,
+       KSMBD_CMD_MAX		= 5,
+} ksmbd_cmd;
+
+/* list of supported commands */
+static const struct ksmbd_cmd_map ksmbd_cmds[] = {
+	{ KSMBD_CMD_SHARE,	"share" },
+	{ KSMBD_CMD_USER,	"user" },
+	{ KSMBD_CMD_DAEMON,	"daemon" },
+	{ KSMBD_CMD_VERSION,	"version" },
+	{ KSMBD_CMD_HELP,	"help" },
+	{ -1,			NULL },
+};
+
+static inline const struct ksmbd_cmd_map *
+__ksmbd_str2map(const char *cmd_str, const struct ksmbd_cmd_map *map, int max)
+{
+	int i;
+
+	for (i = 0; i < max; i++)
+		if (!strcmp(cmd_str, map[i].string))
+			return &map[i];
+
+	return NULL;
+}
+#define ksmbdctl_cmd_map(c) \
+	__ksmbd_str2map(c, ksmbd_cmds, KSMBD_CMD_MAX)
+#define ksmbd_share_cmd_map(c) \
+	__ksmbd_str2map(c, ksmbd_share_cmds, KSMBD_CMD_SHARE_MAX)
+#define ksmbd_user_cmd_map(c) \
+	__ksmbd_str2map(c, ksmbd_user_cmds, KSMBD_CMD_USER_MAX)
+#define ksmbd_daemon_cmd_map(c) \
+	__ksmbd_str2map(c, ksmbd_daemon_cmds, KSMBD_CMD_DAEMON_MAX)
 #endif /* __KSMBDTOOLS_H__ */
